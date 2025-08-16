@@ -174,7 +174,7 @@ function mapColumnType(postgresType: PostgresType, json = false): TsType {
 	return tsType;
 }
 
-export function _mapColumnType(postgresType: PostgresType, json = false): TsType {
+function _mapColumnType(postgresType: PostgresType, json = false): TsType {
 	if (typeof postgresType === 'object') {
 		return 'any';
 	}
@@ -413,10 +413,8 @@ export function _mapColumnType(postgresType: PostgresType, json = false): TsType
 	}
 }
 
-export type PostgresTypeMapper = {
+export const mapper: {
 	mapColumnType: (postgresType: PostgresType, json?: boolean) => TsType;
-}
-
-export const mapper: PostgresTypeMapper = {
+} = {
 	mapColumnType
 };
