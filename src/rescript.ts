@@ -130,7 +130,8 @@ export type IRTypeDef = {
 };
 
 export type RescriptIR = {
-	queryName: string; // e.g. selectUsers
+	queryName: string; // e.g. selectUsers (logical base name)
+	mainName: string; // function to expose as run (may be `${queryName}Nested`)
 	pascalName: string; // e.g. SelectUsers
 	types: IRTypeDef[]; // Extracted types we care about
 	functions: IRFunction[]; // Functions with signatures and optional JS bodies
@@ -165,7 +166,12 @@ export function extractRescriptIRFromTypeScript(tsCode: string, queryName: strin
 		if (fn) functions.push(...(Array.isArray(fn) ? fn : [fn]));
 	}
 
-	return { queryName, pascalName, types, functions };
+	// Prefer nested function as main if available
+	const nestedCandidate = `${queryName}Nested`;
+	const hasNested = functions.some((f) => f.name === nestedCandidate);
+	const mainName = hasNested ? nestedCandidate : queryName;
+
+	return { queryName, mainName, pascalName, types, functions };
 }
 
 function typeNodeToIR(node: ts.TypeNode): IRType {
@@ -307,7 +313,7 @@ function tryTranspileToJs(tsSnippet: string): string | undefined {
 	try {
 		const out = ts.transpileModule(tsSnippet, {
 			compilerOptions: {
-				target: ts.ScriptTarget.ES2019,
+				target: ts.ScriptTarget.ESNext,
 				module: ts.ModuleKind.ESNext,
 				removeComments: false
 			}
@@ -347,31 +353,30 @@ function encodeRawString(s: string): string {
 export function printRescript(ir: RescriptIR, clientType: DatabaseClient['type']): string {
 	const lines: string[] = [];
 
-	// Order type aliases so that dependencies appear before use
-	const orderedTypes = orderTypesTopologically(ir.types);
-	for (const t of orderedTypes) {
-		// Print Params/Result with canonical names, all other aliases as camelCase of original
-		if (t.role === 'Params') {
-			const ctx = { paramsTopLevel: true } as const;
-			lines.push(`type params = ${printRsType(t.aliasOf, clientType, ir, ctx)}`);
-			lines.push('');
-			continue;
+	// Emit all types in declaration order as a recursive chain: type rec ... and ...
+	const allTypes = ir.types;
+	if (allTypes.length > 0) {
+		if (allTypes.length > 1) {
+			lines.push('@@warning("-30")');
 		}
-		if (t.role === 'Result') {
-			lines.push(`type result = ${printRsType(t.aliasOf, clientType, ir)}`);
-			lines.push('');
-			continue;
+		const first = allTypes[0]!;
+		const firstName = lowerFirst(first.name);
+		const firstCtx = first.role === 'Params' ? ({ paramsTopLevel: true } as const) : undefined;
+		lines.push(`type rec ${firstName} = ${printRsType(first.aliasOf, clientType, ir, firstCtx)}`);
+		for (let i = 1; i < allTypes.length; i++) {
+			const t = allTypes[i]!;
+			const name = lowerFirst(t.name);
+			const ctx = t.role === 'Params' ? ({ paramsTopLevel: true } as const) : undefined;
+			lines.push(`and ${name} = ${printRsType(t.aliasOf, clientType, ir, ctx)}`);
 		}
-		const otherName = lowerFirst(t.name);
-		lines.push(`type ${otherName} = ${printRsType(t.aliasOf, clientType, ir)}`);
 		lines.push('');
 	}
 
 	// Emit helper functions first, then main query function last
-	const helperFns = ir.functions.filter((f) => f.name !== ir.queryName);
-	const mainFns = ir.functions.filter((f) => f.name === ir.queryName);
+	const helperFns = ir.functions.filter((f) => f.name !== ir.mainName);
+	const mainFns = ir.functions.filter((f) => f.name === ir.mainName);
 	for (const fn of [...helperFns, ...mainFns]) {
-		const isMain = fn.name === ir.queryName;
+		const isMain = fn.name === ir.mainName;
 		const jsStmt = fn.jsBody || '';
 		if (isMain) {
 			const paramsTypes = fn.params.map((p) => printFnParamType(p.type, clientType, ir)).filter(Boolean) as string[];
@@ -396,82 +401,6 @@ function orderRole(role: IRTypeDef['role']): number {
 	if (role === 'Params') return 0;
 	if (role === 'Result') return 1;
 	return 2;
-}
-
-function orderTypesTopologically(types: IRTypeDef[]): IRTypeDef[] {
-	const byName = new Map(types.map((t) => [t.name, t] as const));
-	const deps = new Map<string, Set<string>>();
-
-	const collect = (t: IRType): Set<string> => {
-		const out = new Set<string>();
-		const visit = (node: IRType) => {
-			switch (node.kind) {
-				case 'array':
-					visit(node.of);
-					break;
-				case 'union':
-					node.of.forEach(visit);
-					break;
-				case 'object':
-					node.fields.forEach((f) => visit(f.type));
-					break;
-				case 'ref':
-					if (byName.has(node.name)) out.add(node.name);
-					break;
-			}
-		};
-		visit(t);
-		return out;
-	};
-
-	for (const t of types) {
-		deps.set(t.name, collect(t.aliasOf));
-	}
-
-	// Kahn's algorithm with role-based tiebreaker and stable order
-	const incomingCount = new Map<string, number>();
-	for (const [name, _set] of deps) incomingCount.set(name, 0);
-	for (const [_name, set] of deps) {
-		for (const d of set) {
-			incomingCount.set(d, (incomingCount.get(d) || 0) + 1);
-		}
-	}
-
-	const result: IRTypeDef[] = [];
-	const queue: IRTypeDef[] = types.filter((t) => (incomingCount.get(t.name) || 0) === 0);
-	// Stable sort by role priority to keep params/result early when possible
-	queue.sort((a, b) => orderRole(a.role) - orderRole(b.role));
-
-	const enqueued = new Set(queue.map((t) => t.name));
-
-	while (queue.length > 0) {
-		const n = queue.shift()!;
-		result.push(n);
-		for (const [m, set] of deps) {
-			if (set.has(n.name)) {
-				set.delete(n.name);
-				incomingCount.set(m, (incomingCount.get(m) || 1) - 1);
-				if ((incomingCount.get(m) || 0) === 0 && !enqueued.has(m)) {
-					const def = byName.get(m)!;
-					enqueued.add(m);
-					// keep stable + role priority
-					let i = 0;
-					for (; i < queue.length; i++) {
-						if (orderRole(def.role) < orderRole(queue[i]!.role)) break;
-					}
-					queue.splice(i, 0, def);
-				}
-			}
-		}
-	}
-
-	// If cycle or leftover due to unknown refs, append remaining in original order
-	if (result.length !== types.length) {
-		const seen = new Set(result.map((t) => t.name));
-		for (const t of types) if (!seen.has(t.name)) result.push(t);
-	}
-
-	return result;
 }
 
 function printFnParamType(t: IRType | undefined, clientType: DatabaseClient['type'], ir: RescriptIR): string | undefined {
@@ -504,8 +433,6 @@ function printRsType(t: IRType, clientType: DatabaseClient['type'], ir: Rescript
 			return 'unknown';
 		case 'ref':
 			if (t.name === 'Database') return mapDatabaseRef(clientType);
-			if (t.name === `${ir.pascalName}Params`) return 'params';
-			if (t.name === `${ir.pascalName}Result`) return 'result';
 			return lowerFirst(t.name);
 		case 'literal': {
 			if (typeof t.value === 'string') return 'string';
@@ -637,8 +564,6 @@ function formatUnionMemberForComment(t: IRType, clientType: DatabaseClient['type
 			return 'any';
 		case 'ref': {
 			if (t.name === 'Database') return 'Database';
-			if (t.name === `${ir.pascalName}Params`) return 'params';
-			if (t.name === `${ir.pascalName}Result`) return 'result';
 			return lowerFirst(t.name);
 		}
 		case 'literal': {

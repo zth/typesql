@@ -1,11 +1,11 @@
-type params = {
+@@warning("-30")
+type rec selectUsersParams = {
 	ids: Null.t<int>,
 	names: array<string>,
 	scores: array<float>,
 	balances: array<float>
 }
-
-type result = {
+and selectUsersResult = {
 	id: int,
 	name: string,
 	created_at: option<string>,
@@ -42,7 +42,7 @@ type result = {
     return result;
 }")
 
-let run: (BetterSqlite3.client, params) => array<result> = %raw("(function selectUsers(db, params) {
+let run: (BetterSqlite3.client, selectUsersParams) => array<selectUsersResult> = %raw("(function selectUsers(db, params) {
     const sql = `
 	select *, true as bool_expr, date('now') as date_expr, datetime('now') as datetime_expr from users where id in (case when ? is not null then ? else null end) and name in (${params.names.map(() => '?')}) and score in (${params.scores.map(() => '?')}) and balance in (${params.balances.map(() => '?')})
 	`;
