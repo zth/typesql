@@ -58,6 +58,9 @@ function setupMappers() {
 	mapperSqlite.mapColumnType = (sqliteType, client) => mapSqlite(sqliteType, client) as TsType;
 }
 
+// Type aliases we should not emit into ReScript output
+const TYPE_ALIAS_IGNORE = new Set<string>(['WhereConditionResult']);
+
 export type GenerateSqlApiParams = {
 	sql: string;
 	queryName?: string;
@@ -86,31 +89,10 @@ export async function generateReScriptFromSql(params: GenerateSqlApiParams): Pro
 	}
 
 	const ir = extractRescriptIRFromTypeScript(generated.right, queryName);
-	const rescript = printRescript(ir, databaseClient.type);
+	const includeEolImport = hasOsEolImport(generated.right);
+	const rescript = printRescript(ir, databaseClient.type, { includeEolImport });
+	// Keep original TS for callers; expansion is only for internal processing
 	return { rescript, originalTs: generated.right };
-}
-
-export async function generateReScriptCodeFromSql(params: GenerateSqlApiParams): Promise<string> {
-	// Ensure TS generator maps SQLite types to ReScript-friendly names (int, float, bool)
-	setupMappers();
-	const { databaseClient, schemaInfo } = params;
-	const queryName = params.queryName ?? 'query';
-	const isCrudFile = params.isCrudFile ?? false;
-
-	const generated = await generateTypeScriptContent({
-		client: databaseClient,
-		queryName,
-		sqlContent: params.sql,
-		schemaInfo,
-		isCrudFile
-	});
-
-	if (generated._tag === 'Left') {
-		throw new Error(generated.left.description);
-	}
-
-	const ir = extractRescriptIRFromTypeScript(generated.right, queryName);
-	return printRescript(ir, databaseClient.type);
 }
 
 export type IRType =
@@ -141,7 +123,6 @@ export type RescriptIR = {
 export function extractRescriptIRFromTypeScript(tsCode: string, queryName: string): RescriptIR {
 	const source = ts.createSourceFile('generated.ts', tsCode, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
 	const pascalName = toPascalCase(queryName);
-	const wanted = new Set([`${pascalName}Params`, `${pascalName}Result`]);
 
 	const types: IRTypeDef[] = [];
 	const functions: IRFunction[] = [];
@@ -149,6 +130,9 @@ export function extractRescriptIRFromTypeScript(tsCode: string, queryName: strin
 	for (const stmt of source.statements) {
 		if (ts.isTypeAliasDeclaration(stmt)) {
 			const name = stmt.name.text;
+			if (TYPE_ALIAS_IGNORE.has(name)) {
+				continue;
+			}
 			const role: IRTypeDef['role'] = name.endsWith('Params')
 				? name.startsWith(pascalName)
 					? 'Params'
@@ -213,13 +197,13 @@ function typeNodeToIR(node: ts.TypeNode): IRType {
 		if (ts.isStringLiteral(node.literal)) return { kind: 'literal', value: node.literal.text };
 		if (node.literal.kind === ts.SyntaxKind.TrueKeyword) return { kind: 'literal', value: true };
 		if (node.literal.kind === ts.SyntaxKind.FalseKeyword) return { kind: 'literal', value: false };
-		if (node.literal.kind === ts.SyntaxKind.NullKeyword) return { kind: 'literal', value: null } as any;
+		if (node.literal.kind === ts.SyntaxKind.NullKeyword) return { kind: 'literal', value: null };
 	}
 	if (node.kind === ts.SyntaxKind.NumberKeyword) return { kind: 'float' };
 	if (node.kind === ts.SyntaxKind.BooleanKeyword) return { kind: 'bool' };
 	if (node.kind === ts.SyntaxKind.StringKeyword) return { kind: 'string' };
-	if (node.kind === ts.SyntaxKind.NullKeyword) return { kind: 'literal', value: null } as any;
-	if (node.kind === ts.SyntaxKind.UndefinedKeyword) return { kind: 'literal', value: undefined } as any;
+	if (node.kind === ts.SyntaxKind.NullKeyword) return { kind: 'literal', value: null };
+	if (node.kind === ts.SyntaxKind.UndefinedKeyword) return { kind: 'literal', value: undefined };
 	if (node.kind === ts.SyntaxKind.AnyKeyword || node.kind === ts.SyntaxKind.UnknownKeyword) {
 		return { kind: 'any' };
 	}
@@ -350,8 +334,14 @@ function encodeRawString(s: string): string {
 }
 
 // ReScript printer and helpers
-export function printRescript(ir: RescriptIR, clientType: DatabaseClient['type']): string {
+export function printRescript(ir: RescriptIR, clientType: DatabaseClient['type'], opts?: { includeEolImport?: boolean }): string {
 	const lines: string[] = [];
+
+	// Optional raw import for EOL if present in TS
+	if (opts?.includeEolImport) {
+		lines.push("%%raw(`import { EOL } from 'os';`)");
+		lines.push('');
+	}
 
 	// Emit all types in declaration order as a recursive chain: type rec ... and ...
 	const allTypes = ir.types;
@@ -397,10 +387,8 @@ export function printRescript(ir: RescriptIR, clientType: DatabaseClient['type']
 	return lines.join('\n');
 }
 
-function orderRole(role: IRTypeDef['role']): number {
-	if (role === 'Params') return 0;
-	if (role === 'Result') return 1;
-	return 2;
+function hasOsEolImport(tsCode: string): boolean {
+	return tsCode.includes('import { EOL } from "os"');
 }
 
 function printFnParamType(t: IRType | undefined, clientType: DatabaseClient['type'], ir: RescriptIR): string | undefined {
@@ -435,7 +423,10 @@ function printRsType(t: IRType, clientType: DatabaseClient['type'], ir: Rescript
 			if (t.name === 'Database') return mapDatabaseRef(clientType);
 			return lowerFirst(t.name);
 		case 'literal': {
-			if (typeof t.value === 'string') return 'string';
+			if (typeof t.value === 'string') {
+				// Print single string literal types as a polymorphic variant
+				return `[#\"${escapeVariant(t.value)}\"]`;
+			}
 			if (typeof t.value === 'number') return 'float';
 			if (typeof t.value === 'boolean') return 'bool';
 			logWarn(`Literal '${String(t.value)}' maps to ReScript 'unknown'`);
@@ -506,11 +497,11 @@ function printRsType(t: IRType, clientType: DatabaseClient['type'], ir: Rescript
 }
 
 function isNullLiteral(t: IRType): boolean {
-	return t.kind === 'literal' && (t as any).value === null;
+	return t.kind === 'literal' && t.value === null;
 }
 
 function isUndefinedLiteral(t: IRType): boolean {
-	return t.kind === 'literal' && typeof (t as any).value === 'undefined';
+	return t.kind === 'literal' && typeof t.value === 'undefined';
 }
 
 function addUndefinedToIR(t: IRType): IRType {
@@ -518,9 +509,9 @@ function addUndefinedToIR(t: IRType): IRType {
 	if (t.kind === 'union') {
 		const hasUndef = t.of.some(isUndefinedLiteral);
 		if (hasUndef) return t;
-		return { kind: 'union', of: [...t.of, { kind: 'literal', value: undefined } as any] };
+		return { kind: 'union', of: [...t.of, { kind: 'literal', value: undefined }] };
 	}
-	return { kind: 'union', of: [t, { kind: 'literal', value: undefined } as any] };
+	return { kind: 'union', of: [t, { kind: 'literal', value: undefined }] };
 }
 
 function mapDatabaseRef(clientType: DatabaseClient['type']): string {
@@ -567,7 +558,7 @@ function formatUnionMemberForComment(t: IRType, clientType: DatabaseClient['type
 			return lowerFirst(t.name);
 		}
 		case 'literal': {
-			const v = (t as any).value;
+			const v = t.value;
 			if (typeof v === 'string') return `'${v.replace(/'/g, "\\'")}'`;
 			if (typeof v === 'number') return String(v);
 			if (typeof v === 'boolean') return String(v);

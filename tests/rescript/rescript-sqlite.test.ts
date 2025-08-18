@@ -112,4 +112,56 @@ describe('api: generateReScriptFromSql (SQLite)', () => {
 
 		assert.deepEqual(rescript, fs.readFileSync('sqlite-generate-rescript.select-user-posts-nested.rescript.txt', 'utf8'));
 	});
+
+	it('generates code for a dynamic query (@dynamicQuery)', async () => {
+		const clientResult = createSqliteClient('better-sqlite3', ':memory:', [], []);
+		if ((clientResult as any).isErr && (clientResult as any).isErr()) {
+			assert.fail('Failed to create SQLite client');
+		}
+		const databaseClient = (clientResult as any).value;
+
+		// Create minimal tables for the dynamic query
+		databaseClient.client.exec(`
+		create table mytable1 (
+			id integer primary key,
+			value integer
+		);
+		create table mytable2 (
+			id integer primary key,
+			name text not null,
+			descr text
+		);
+		`);
+
+		const schemaRes = loadDbSchema(databaseClient.client);
+		if (schemaRes.isErr()) {
+			assert.fail('Failed to load SQLite schema');
+		}
+
+		const schemaInfo: SchemaInfo = {
+			kind: 'better-sqlite3',
+			columns: schemaRes.value
+		};
+
+		const sql = `-- @dynamicQuery
+SELECT m1.id, m1.value, m2.name, m2.descr as description
+FROM mytable1 m1
+INNER JOIN mytable2 m2 on m1.id = m2.id
+WHERE m2.name = :name
+AND m2.descr = :description`;
+
+		const queryName = 'dynamicQuery01';
+		const { rescript, originalTs } = await generateReScriptFromSql({
+			sql,
+			queryName,
+			isCrudFile: false,
+			databaseClient,
+			schemaInfo
+		});
+
+		fs.writeFileSync('sqlite-generate-rescript.dynamic-query01.rescript.txt', rescript);
+		fs.writeFileSync('sqlite-generate-rescript.dynamic-query01.ts.txt', originalTs);
+
+		assert.deepEqual(rescript, fs.readFileSync('sqlite-generate-rescript.dynamic-query01.rescript.txt', 'utf8'));
+	});
 });
