@@ -9,8 +9,10 @@
 	"scripts": {
 		"build": "tsc",
 		"watch": "tsc -w",
-		"test": "mocha --enable-source-maps dist/tests/**/*.js --watch --watch-files **/*.js",
-		"test:rescript": "mocha --enable-source-maps dist/tests/rescript/*.js --watch --watch-files dist/tests/rescript/**/*.js",
+		"test": "mocha --enable-source-maps dist/tests/**/*.js",
+		"test:rescript": "mocha --enable-source-maps dist/tests/rescript/*.js",
+		"test:watch": "mocha --enable-source-maps dist/tests/**/*.js --watch --watch-files **/*.js",
+		"test:rescript:watch": "mocha --enable-source-maps dist/tests/rescript/*.js --watch --watch-files dist/tests/rescript/**/*.js",
 		"antlr4ts": "antlr4ts -Xexact-output-dir -o ./parser/ ./grammar/*.g4",
 		"dist": "tsc && shx cp ./package.json ./README.md ./dist/src && cd ./dist/src && npm publish",
 		"dist-exp": "tsc && shx cp ./package.json ./README.md ./dist/src && cd ./dist/src && npm publish --tag experimental",

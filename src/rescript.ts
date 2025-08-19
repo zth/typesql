@@ -122,7 +122,7 @@ export type RescriptIR = {
 
 // Public entry: parse TS string and extract a minimal IR for ReScript printing
 export function extractRescriptIRFromTypeScript(tsCode: string, queryName: string): RescriptIR {
-	const source = ts.createSourceFile('generated.ts', tsCode, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+	const source = ts.createSourceFile('generated.ts', tsCode, ts.ScriptTarget.Latest, false, ts.ScriptKind.TS);
 	const pascalName = toPascalCase(queryName);
 
 	const types: IRTypeDef[] = [];
@@ -187,7 +187,7 @@ function typeNodeToIR(node: ts.TypeNode): IRType {
 		return { kind: 'union', of: node.types.map(typeNodeToIR) };
 	}
 	if (ts.isTypeReferenceNode(node)) {
-		const typeName = node.typeName.getText();
+		const typeName = ts.isIdentifier(node.typeName) ? node.typeName.text : node.typeName.getText();
 		if (typeName === 'Date') return { kind: 'date' };
 		if (typeName === 'Uint8Array' || typeName === 'ArrayBuffer') return { kind: 'bytes' };
 		// Normalize scalar aliases our mapper might emit
@@ -255,6 +255,8 @@ function extractFunctionFromStatement(stmt: ts.Statement, source: ts.SourceFile)
 	if (ts.isVariableStatement(stmt)) {
 		const isExported = hasExportModifier(stmt.modifiers);
 		const out: IRFunction[] = [];
+		// Transpile the entire statement once and reuse for each discovered function
+		const transpiledOnce = sanitizeJsBody(tryTranspileToJs(stmt.getText(source)));
 		for (const decl of stmt.declarationList.declarations) {
 			if (!ts.isIdentifier(decl.name)) continue;
 			const name = decl.name.text;
@@ -262,7 +264,7 @@ function extractFunctionFromStatement(stmt: ts.Statement, source: ts.SourceFile)
 			if (init && (ts.isFunctionExpression(init) || ts.isArrowFunction(init))) {
 				const params = (init.parameters || []).map(paramToIRParam);
 				const returnType = init.type ? typeNodeToIRRef(init.type) : undefined;
-				const jsBody = sanitizeJsBody(tryTranspileToJs(stmt.getText(source)));
+				const jsBody = transpiledOnce;
 				out.push({ name, isExported, params, returnType, jsBody });
 			}
 		}
@@ -285,7 +287,7 @@ function paramToIRParam(p: ts.ParameterDeclaration): IRFunctionParam {
 // Similar to typeNodeToIR, but preserves references as refs instead of defaulting to 'any'
 function typeNodeToIRRef(node: ts.TypeNode): IRType {
 	if (ts.isTypeReferenceNode(node)) {
-		const typeName = node.typeName.getText();
+		const typeName = ts.isIdentifier(node.typeName) ? node.typeName.text : node.typeName.getText();
 		if (typeName === 'Date') return { kind: 'date' };
 		if (typeName === 'Uint8Array' || typeName === 'ArrayBuffer') return { kind: 'bytes' };
 		if (typeName === 'int') return { kind: 'int' };
@@ -311,7 +313,8 @@ function tryTranspileToJs(tsSnippet: string): string | undefined {
 			compilerOptions: {
 				target: ts.ScriptTarget.ESNext,
 				module: ts.ModuleKind.ESNext,
-				removeComments: false
+				removeComments: true,
+				importsNotUsedAsValues: ts.ImportsNotUsedAsValues.Remove
 			}
 		});
 		return out.outputText.trim();
@@ -348,6 +351,7 @@ function encodeRawString(s: string): string {
 // ReScript printer and helpers
 export function printRescript(ir: RescriptIR, clientType: DatabaseClient['type'], opts?: { includeEolImport?: boolean }): string {
 	const lines: string[] = [];
+	const emittedRaw = new Set<string>();
 
 	// Optional raw import for EOL if present in TS
 	if (opts?.includeEolImport) {
@@ -378,14 +382,20 @@ export function printRescript(ir: RescriptIR, clientType: DatabaseClient['type']
 	if (ir.consts.length > 0) {
 		for (const js of ir.consts) {
 			const encoded = encodeRawString(js);
-			lines.push(`%%raw("${encoded}")`);
-			lines.push('');
+			if (!emittedRaw.has(encoded)) {
+				lines.push(`%%raw("${encoded}")`);
+				emittedRaw.add(encoded);
+				lines.push('');
+			}
 		}
 	}
 
-	// Emit helper functions first, then main query function last
-	const helperFns = ir.functions.filter((f) => f.name !== ir.mainName);
-	const mainFns = ir.functions.filter((f) => f.name === ir.mainName);
+	// Emit helper functions first, then main query function last (single-pass partition)
+	const helperFns: IRFunction[] = [];
+	const mainFns: IRFunction[] = [];
+	for (const f of ir.functions) {
+		(f.name === ir.mainName ? mainFns : helperFns).push(f);
+	}
 	for (const fn of [...helperFns, ...mainFns]) {
 		const isMain = fn.name === ir.mainName;
 		const jsStmt = fn.jsBody || '';
@@ -400,8 +410,11 @@ export function printRescript(ir: RescriptIR, clientType: DatabaseClient['type']
 			lines.push('');
 		} else {
 			const js = encodeRawString(jsStmt);
-			lines.push(`%%raw("${js}")`);
-			lines.push('');
+			if (!emittedRaw.has(js)) {
+				lines.push(`%%raw("${js}")`);
+				emittedRaw.add(js);
+				lines.push('');
+			}
 		}
 	}
 
@@ -486,14 +499,14 @@ function printRsType(t: IRType, clientType: DatabaseClient['type'], ir: Rescript
 			}
 
 			// Unsupported TS-style multi-type unions: print as unknown with refined inline comment
-			const renderedParts: string[] = [];
+			const renderedSet = new Set<string>();
 			for (const part of nonNil) {
 				const label = formatUnionMemberForComment(part, clientType, ir);
-				if (!renderedParts.includes(label)) renderedParts.push(label);
+				renderedSet.add(label);
 			}
-			if (hasNull && !renderedParts.includes('null')) renderedParts.push('null');
-			if (hasUndefined && !renderedParts.includes('undefined')) renderedParts.push('undefined');
-			const rendered = renderedParts.join(' | ');
+			if (hasNull) renderedSet.add('null');
+			if (hasUndefined) renderedSet.add('undefined');
+			const rendered = Array.from(renderedSet).join(' | ');
 			logWarn(`Unsupported TS-style union remains after transform -> printing as 'unknown /* ${rendered} */'.`);
 			return `unknown /* ${rendered} */`;
 		}
@@ -591,12 +604,12 @@ function formatUnionMemberForComment(t: IRType, clientType: DatabaseClient['type
 			return `array<${formatUnionMemberForComment(t.of, clientType, ir)}>`;
 		case 'union': {
 			// Flatten nested unions for comments
-			const parts: string[] = [];
+			const parts = new Set<string>();
 			for (const p of t.of) {
 				const label = formatUnionMemberForComment(p, clientType, ir);
-				if (!parts.includes(label)) parts.push(label);
+				parts.add(label);
 			}
-			return parts.join(' | ');
+			return Array.from(parts).join(' | ');
 		}
 		case 'object':
 			return 'object';
