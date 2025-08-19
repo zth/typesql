@@ -93,7 +93,7 @@ export function generateTsCodeForMySQL(tsDescriptor: TsDescriptor, fileName: str
 		}
 		writer.blankLine();
 		writer.writeLine(`const NumericOperatorList = ['=', '<>', '>', '<', '>=', '<='] as const;`);
-		writer.writeLine(`type NumericOperator = typeof NumericOperatorList[number];`);
+		writer.writeLine(`type NumericOperator = '=' | '<>' | '>' | '<' | '>=' | '<=';`);
 		if (hasStringColumn(tsDescriptor.columns)) {
 			writer.writeLine(`type StringOperator = '=' | '<>' | '>' | '<' | '>=' | '<=' | 'LIKE';`);
 		}
