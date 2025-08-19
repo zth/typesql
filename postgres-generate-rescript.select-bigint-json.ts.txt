@@ -1,0 +1,27 @@
+import pg from 'pg';
+
+export type SelectBigintAndJsonResult = {
+	big: bigint | null;
+	payload: JSON;
+	list: JSON;
+}
+
+export async function selectBigintAndJson(client: pg.Client | pg.Pool | pg.PoolClient): Promise<SelectBigintAndJsonResult | null> {
+	const sql = `
+	SELECT
+			CAST(123 AS bigint) as big,
+			'{"a":1}'::jsonb as payload,
+			'[1,2,3]'::json as list
+	`
+	return client.query({ text: sql, rowMode: 'array' })
+		.then(res => res.rows.length > 0 ? mapArrayToSelectBigintAndJsonResult(res.rows[0]) : null);
+}
+
+function mapArrayToSelectBigintAndJsonResult(data: any) {
+	const result: SelectBigintAndJsonResult = {
+		big: data[0],
+		payload: data[1],
+		list: data[2]
+	}
+	return result;
+}

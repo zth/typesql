@@ -1,0 +1,31 @@
+%%raw("async function selectBigintAndJson(client) {
+  const sql = `
+	SELECT
+			CAST(123 AS bigint) as big,
+			'{\"a\":1}'::jsonb as payload,
+			'[1,2,3]'::json as list
+	`
+  return client.query({ text: sql, rowMode: 'array' })
+    .then((res) => res.rows.length > 0 ? mapArrayToSelectBigintAndJsonResult(res.rows[0]) : null)
+}
+
+function mapArrayToSelectBigintAndJsonResult(data) {
+  const result = {
+    big: data[0],
+    payload: data[1],
+    list: data[2],
+  }
+  return result
+}
+")
+
+type selectBigintAndJsonResult = {
+  big: Null.t<BigInt.t>,
+  payload: JSON.t,
+  list: JSON.t
+}
+
+external selectBigintAndJson: (Pg.client) => promise<Null.t<selectBigintAndJsonResult>> = "selectBigintAndJson"
+let run: (Pg.client) => promise<Null.t<selectBigintAndJsonResult>> = (db) => {
+  selectBigintAndJson(db)
+}

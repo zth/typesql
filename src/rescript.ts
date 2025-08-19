@@ -302,20 +302,21 @@ const mapPostgres: (postgresType: PostgresType, json?: boolean) => string = (pos
 			return json ? 'string[]' : 'Date[]';
 		case 'json':
 		case 'jsonb':
-			return 'any';
+			return 'JSON';
 		case '_json':
 		case 'json[]':
 		case '_jsonb':
 		case 'jsonb[]':
-			return 'any[]';
+			return 'JSON[]';
 		case 'int8':
-			return 'string';
+			return 'bigint';
 		case '_int8':
 		case 'int8[]':
-			return 'string[]';
+			return 'bigint[]';
 		case 'unknown':
-		case 'null':
 			return 'any';
+		case 'null':
+			return 'null';
 	}
 	return 'any';
 };
@@ -403,14 +404,14 @@ export async function generateReScriptFromMySQL(params: GenerateMySQLOptions): P
 }
 
 export type IRType =
-    | { kind: 'int' | 'float' | 'string' | 'bool' | 'date' | 'bytes' | 'any' }
-    | { kind: 'array'; of: IRType }
-    | { kind: 'promise'; of: IRType }
-    | { kind: 'union'; of: IRType[] }
-    | { kind: 'tuple'; elements: IRType[] }
-    | { kind: 'object'; fields: IRField[] }
-    | { kind: 'literal'; value: string | number | boolean | null | undefined }
-    | { kind: 'ref'; name: string };
+	| { kind: 'int' | 'float' | 'string' | 'bool' | 'date' | 'bytes' | 'any' | 'bigint' }
+	| { kind: 'array'; of: IRType }
+	| { kind: 'promise'; of: IRType }
+	| { kind: 'union'; of: IRType[] }
+	| { kind: 'tuple'; elements: IRType[] }
+	| { kind: 'object'; fields: IRField[] }
+	| { kind: 'literal'; value: string | number | boolean | null | undefined }
+	| { kind: 'ref'; name: string };
 
 export type IRField = { name: string; type: IRType; optional?: boolean };
 
@@ -498,10 +499,10 @@ function typeNodeToIR(node: ts.TypeNode): IRType {
 	if (ts.isUnionTypeNode(node)) {
 		return { kind: 'union', of: node.types.map(typeNodeToIR) };
 	}
-    if (ts.isTypeReferenceNode(node)) {
-        const typeName = ts.isIdentifier(node.typeName) ? node.typeName.text : getEntityNameText(node.typeName);
-        if (typeName === 'Date') return { kind: 'date' };
-        if (typeName === 'Uint8Array' || typeName === 'ArrayBuffer') return { kind: 'bytes' };
+	if (ts.isTypeReferenceNode(node)) {
+		const typeName = ts.isIdentifier(node.typeName) ? node.typeName.text : getEntityNameText(node.typeName);
+		if (typeName === 'Date') return { kind: 'date' };
+		if (typeName === 'Uint8Array' || typeName === 'ArrayBuffer') return { kind: 'bytes' };
 		// Normalize scalar aliases our mapper might emit
 		if (typeName === 'int') return { kind: 'int' };
 		if (typeName === 'float') return { kind: 'float' };
@@ -512,9 +513,9 @@ function typeNodeToIR(node: ts.TypeNode): IRType {
 			return { kind: 'any' };
 		}
 		// Handle generic arrays: Array<T> and array<T>
-        if ((typeName === 'Array' || typeName === 'array') && node.typeArguments && node.typeArguments.length === 1) {
-            return { kind: 'array', of: typeNodeToIR(node.typeArguments[0]!) };
-        }
+		if ((typeName === 'Array' || typeName === 'array') && node.typeArguments && node.typeArguments.length === 1) {
+			return { kind: 'array', of: typeNodeToIR(node.typeArguments[0]!) };
+		}
         if (typeName === 'Promise' && node.typeArguments && node.typeArguments.length === 1) {
             return { kind: 'promise', of: typeNodeToIR(node.typeArguments[0]!) };
         }
@@ -527,6 +528,7 @@ function typeNodeToIR(node: ts.TypeNode): IRType {
 		if (node.literal.kind === ts.SyntaxKind.NullKeyword) return { kind: 'literal', value: null };
 	}
 	if (node.kind === ts.SyntaxKind.NumberKeyword) return { kind: 'float' };
+	if (node.kind === ts.SyntaxKind.BigIntKeyword) return { kind: 'bigint' };
 	if (node.kind === ts.SyntaxKind.BooleanKeyword) return { kind: 'bool' };
 	if (node.kind === ts.SyntaxKind.StringKeyword) return { kind: 'string' };
 	if (node.kind === ts.SyntaxKind.NullKeyword) return { kind: 'literal', value: null };
@@ -589,20 +591,20 @@ function paramToIRParam(p: ts.ParameterDeclaration): IRFunctionParam {
 
 // Similar to typeNodeToIR, but preserves references as refs instead of defaulting to 'any'
 function typeNodeToIRRef(node: ts.TypeNode): IRType {
-    if (ts.isTypeReferenceNode(node)) {
-        const typeName = ts.isIdentifier(node.typeName) ? node.typeName.text : getEntityNameText(node.typeName);
-        if (typeName === 'Date') return { kind: 'date' };
-        if (typeName === 'Uint8Array' || typeName === 'ArrayBuffer') return { kind: 'bytes' };
-        if (typeName === 'int') return { kind: 'int' };
-        if (typeName === 'float') return { kind: 'float' };
-        if (typeName === 'bool') return { kind: 'bool' };
-        if (typeName === 'string') return { kind: 'string' };
-        if (typeName === 'any' || typeName === 'unknown') {
-            return { kind: 'any' };
-        }
-        if ((typeName === 'Array' || typeName === 'array') && node.typeArguments && node.typeArguments.length === 1) {
-            return { kind: 'array', of: typeNodeToIR(node.typeArguments[0]!) };
-        }
+	if (ts.isTypeReferenceNode(node)) {
+		const typeName = ts.isIdentifier(node.typeName) ? node.typeName.text : getEntityNameText(node.typeName);
+		if (typeName === 'Date') return { kind: 'date' };
+		if (typeName === 'Uint8Array' || typeName === 'ArrayBuffer') return { kind: 'bytes' };
+		if (typeName === 'int') return { kind: 'int' };
+		if (typeName === 'float') return { kind: 'float' };
+		if (typeName === 'bool') return { kind: 'bool' };
+		if (typeName === 'string') return { kind: 'string' };
+		if (typeName === 'any' || typeName === 'unknown') {
+			return { kind: 'any' };
+		}
+		if ((typeName === 'Array' || typeName === 'array') && node.typeArguments && node.typeArguments.length === 1) {
+			return { kind: 'array', of: typeNodeToIR(node.typeArguments[0]!) };
+		}
         if (typeName === 'Promise' && node.typeArguments && node.typeArguments.length === 1) {
             return { kind: 'promise', of: typeNodeToIR(node.typeArguments[0]!) };
         }
@@ -642,7 +644,8 @@ export function printRescript(ir: RescriptIR, clientType: DatabaseClient['type']
 			currentAliasName: first.name,
 			paramsTopLevel: first.role === 'Params' || first.name.endsWith('Select') ? true : undefined
 		} as const;
-		lines.push(`type rec ${firstName} = ${printRsType(first.aliasOf, clientType, ir, firstCtx)}`);
+		const recFlag = allTypes.length > 1 ? 'rec ' : '';
+		lines.push(`type ${recFlag}${firstName} = ${printRsType(first.aliasOf, clientType, ir, firstCtx)}`);
 		for (let i = 1; i < allTypes.length; i++) {
 			const t = allTypes[i]!;
 			const name = lowerFirst(t.name);
@@ -756,37 +759,41 @@ type PrintCtx = {
 };
 
 function printRsType(t: IRType, clientType: DatabaseClient['type'], ir: RescriptIR, ctx?: PrintCtx): string {
-		switch (t.kind) {
-			case 'int':
-				return 'int';
-			case 'float':
-				return 'float';
-			case 'string':
-				return 'string';
-			case 'bool':
-				return 'bool';
-			case 'date':
-				return 'Date.t';
-			case 'bytes':
-				return clientType === 'better-sqlite3' || clientType === 'bun:sqlite' ? 'Uint8Array.t' : 'ArrayBuffer';
-			case 'any':
-				console.warn("Printing IR 'any' as ReScript 'unknown'");
-				return 'unknown';
-			case 'promise':
-				return `promise<${printRsType(t.of, clientType, ir, ctx)}>`;
+	switch (t.kind) {
+		case 'int':
+			return 'int';
+		case 'float':
+			return 'float';
+		case 'string':
+			return 'string';
+		case 'bool':
+			return 'bool';
+		case 'bigint':
+			return 'BigInt.t';
+		case 'date':
+			return 'Date.t';
+		case 'bytes':
+			return clientType === 'better-sqlite3' || clientType === 'bun:sqlite' ? 'Uint8Array.t' : 'ArrayBuffer';
+		case 'any':
+			console.warn("Printing IR 'any' as ReScript 'unknown'");
+			return 'unknown';
+		case 'promise':
+			return `promise<${printRsType(t.of, clientType, ir, ctx)}>`;
 		case 'ref':
 			if (t.name === 'Database') return mapDatabaseRef(clientType);
+			if (t.name === 'JSON') return 'JSON.t';
 			return lowerFirst(t.name);
-		case 'literal': {
-			if (typeof t.value === 'string') {
-				// Print single string literal types as a polymorphic variant
-				return `[#\"${escapeVariant(t.value)}\"]`;
-			}
-			if (typeof t.value === 'number') return 'float';
-			if (typeof t.value === 'boolean') return 'bool';
-			console.warn(`Literal '${String(t.value)}' maps to ReScript 'unknown'`);
-			return 'unknown';
-		}
+        case 'literal': {
+            if (typeof t.value === 'string') {
+                // Print single string literal types as a polymorphic variant
+                return `[#\"${escapeVariant(t.value)}\"]`;
+            }
+            if (typeof t.value === 'number') return 'float';
+            if (typeof t.value === 'boolean') return 'bool';
+            if (t.value === null) return 'Null.t<unknown>';
+            console.warn(`Literal '${String(t.value)}' maps to ReScript 'unknown'`);
+            return 'unknown';
+        }
 		case 'array':
 			return `array<${printRsType(t.of, clientType, ir, ctx)}>`;
 		case 'tuple': {
@@ -945,6 +952,8 @@ function formatUnionMemberForComment(t: IRType, clientType: DatabaseClient['type
 		case 'string':
 		case 'bool':
 			return t.kind;
+		case 'bigint':
+			return 'BigInt';
 		case 'date':
 			return 'Date';
 		case 'bytes':

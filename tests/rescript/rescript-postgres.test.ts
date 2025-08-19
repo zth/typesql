@@ -95,4 +95,60 @@ AND m2.descr = :description`;
 
 		assert.ok(rescript && rescript.length > 0, 'Expected ReScript output to be non-empty');
 	});
+
+	it('generates code for nested JSON literals', async () => {
+		// Use constant JSON values to ensure arrays and objects are handled
+		const sql = `SELECT
+	json_build_object(
+	  'user', json_build_object(
+	    'id', 1,
+	    'name', 'Alice',
+	    'address', json_build_object('city', 'NYC', 'zip', '10001')
+	  ),
+	  'tags', json_build_array('a', 'b', 'c'),
+	  'meta', json_build_object('active', true, 'scores', json_build_array(1, 2, 3))
+	) as payload,
+	json_build_array(
+	  json_build_object('id', 1),
+	  json_build_object('id', 2, 'children', json_build_array(json_build_object('id', 3)))
+	) as items`;
+
+		const queryName = 'selectJsonNested';
+		const { rescript, originalTs } = await generateReScriptFromPostgres({
+			sql,
+			queryName,
+			isCrudFile: false,
+			databaseClient,
+			schemaInfo
+		});
+
+		if (WRITE_FILES) {
+			fs.writeFileSync('postgres-generate-rescript.select-json-nested.rescript.txt', rescript);
+			fs.writeFileSync('postgres-generate-rescript.select-json-nested.ts.txt', originalTs);
+		}
+
+		assert.equal(rescript, fs.readFileSync('postgres-generate-rescript.select-json-nested.rescript.txt', 'utf8'));
+	});
+
+	it('maps bigint, json, and null to ReScript types', async () => {
+		const sql = `SELECT
+		CAST(123 AS bigint) as big,
+		'{"a":1}'::jsonb as payload,
+		'[1,2,3]'::json as list,
+		NULL as nothing`;
+
+		const queryName = 'selectBigintJsonNull';
+		const { rescript, originalTs } = await generateReScriptFromPostgres({
+			sql,
+			queryName,
+			isCrudFile: false,
+			databaseClient,
+			schemaInfo
+		});
+
+		if (WRITE_FILES) {
+			fs.writeFileSync('postgres-generate-rescript.select-bigint-json-null.rescript.txt', rescript);
+			fs.writeFileSync('postgres-generate-rescript.select-bigint-json-null.ts.txt', originalTs);
+		}
+	});
 });
