@@ -376,11 +376,17 @@ export type GeneratePostgresOptions = {
 export async function generateReScriptFromPostgres(params: GeneratePostgresOptions): Promise<{ rescript: string; originalTs: string }> {
 	const { databaseClient, schemaInfo, queryName } = params;
 	setupMappers();
-	const result = await generatePgTsCode(databaseClient, params.sql, queryName, schemaInfo);
-	if (result.isErr()) {
-		throw new Error(result.error.description);
+	const result = await generateTypeScriptContent({
+		client: databaseClient,
+		queryName,
+		sqlContent: params.sql,
+		schemaInfo,
+		isCrudFile: params.isCrudFile ?? false
+	});
+	if (isLeft(result)) {
+		throw new Error(result.left.description);
 	}
-	return rescriptFromTs(result.value, queryName, databaseClient.type);
+	return rescriptFromTs(result.right, queryName, databaseClient.type);
 }
 
 export type GenerateMySQLOptions = {
@@ -392,15 +398,25 @@ export type GenerateMySQLOptions = {
 };
 
 export async function generateReScriptFromMySQL(params: GenerateMySQLOptions): Promise<{ rescript: string; originalTs: string }> {
-	const { databaseClient, queryName } = params;
 	setupMappers();
+
+	const { databaseClient, queryName } = params;
 	const parsed = await parseSql(databaseClient, params.sql);
 	if (isLeft(parsed)) {
 		throw new Error(parsed.left.description);
 	}
-	const tsDesc = generateTsDescriptor(parsed.right);
-	const tsContent = generateTsCodeForMySQL(tsDesc, queryName, params.isCrudFile ?? false);
-	return rescriptFromTs(tsContent, queryName, databaseClient.type);
+
+	const tsContent = await generateTypeScriptContent({
+		client: databaseClient,
+		queryName,
+		sqlContent: params.sql,
+		schemaInfo: params.schemaInfo,
+		isCrudFile: params.isCrudFile ?? false
+	});
+	if (isLeft(tsContent)) {
+		throw new Error(tsContent.left.description);
+	}
+	return rescriptFromTs(tsContent.right, queryName, databaseClient.type);
 }
 
 export type IRType =
@@ -435,6 +451,9 @@ export function extractRescriptIRFromTypeScript(tsCode: string, queryName: strin
 	const source = ts.createSourceFile('generated.ts', tsCode, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
 	const pascalName = toPascalCase(queryName);
 
+	// Collect const literal arrays we care about (orderByColumns)
+	const constStringArrays = collectConstStringArrayLiterals(source);
+
 	const types: IRTypeDef[] = [];
 	const functions: IRFunction[] = [];
 
@@ -454,11 +473,11 @@ export function extractRescriptIRFromTypeScript(tsCode: string, queryName: strin
 						: 'Other'
 					: 'Other';
 			// Capture all type aliases, not just Params/Result
-			const aliasOf = typeNodeToIR(stmt.type);
+			const aliasOf = typeNodeToIR(stmt.type, constStringArrays);
 			types.push({ name, role, aliasOf });
 		}
 		// Collect const-based functions
-		const fn = extractFunctionFromStatement(stmt);
+		const fn = extractFunctionFromStatement(stmt, constStringArrays);
 		if (fn) {
 			functions.push(...(Array.isArray(fn) ? fn : [fn]));
 		}
@@ -478,26 +497,44 @@ function getEntityNameText(name: ts.EntityName): string {
 	return `${getEntityNameText(name.left)}.${name.right.text}`;
 }
 
-function typeNodeToIR(node: ts.TypeNode): IRType {
+type ConstStringArrayMap = Map<string, string[]>;
+
+function typeNodeToIR(node: ts.TypeNode, constStringArrays?: ConstStringArrayMap): IRType {
 	if (ts.isTypeLiteralNode(node)) {
 		const fields: IRField[] = node.members.filter(ts.isPropertySignature).map((m) => {
 			const name = getPropertyName(m.name);
 			const optional = m.questionToken != null;
 			const typeNode = m.type ?? ts.factory.createKeywordTypeNode(ts.SyntaxKind.AnyKeyword);
-			return { name, optional, type: typeNodeToIR(typeNode) };
+			return { name, optional, type: typeNodeToIR(typeNode, constStringArrays) };
 		});
 		return { kind: 'object', fields };
 	}
 	// Tuple types, e.g. ['id', StringOperator, int | null]
 	if (ts.isTupleTypeNode(node)) {
-		const elements = node.elements.map((el) => typeNodeToIR(el));
+		const elements = node.elements.map((el) => typeNodeToIR(el, constStringArrays));
 		return { kind: 'tuple', elements };
 	}
 	if (ts.isArrayTypeNode(node)) {
-		return { kind: 'array', of: typeNodeToIR(node.elementType) };
+		return { kind: 'array', of: typeNodeToIR(node.elementType, constStringArrays) };
 	}
 	if (ts.isUnionTypeNode(node)) {
-		return { kind: 'union', of: node.types.map(typeNodeToIR) };
+		return { kind: 'union', of: node.types.map((t) => typeNodeToIR(t, constStringArrays)) };
+	}
+	// Handle typeof <ConstStringArray>[number] -> union of string literals
+	if (ts.isIndexedAccessTypeNode(node)) {
+		const obj = node.objectType;
+		const idx = node.indexType;
+		if (
+			ts.isTypeQueryNode(obj) &&
+			ts.isIdentifier(obj.exprName) &&
+			(idx.kind === ts.SyntaxKind.NumberKeyword ||
+				(ts.isTypeReferenceNode(idx) && ts.isIdentifier(idx.typeName) && idx.typeName.text === 'number'))
+		) {
+			const values = constStringArrays?.get(obj.exprName.text) || [];
+			if (values.length > 0) {
+				return { kind: 'union', of: values.map((v) => ({ kind: 'literal', value: v }) as IRType) };
+			}
+		}
 	}
 	if (ts.isTypeReferenceNode(node)) {
 		const typeName = ts.isIdentifier(node.typeName) ? node.typeName.text : getEntityNameText(node.typeName);
@@ -514,13 +551,13 @@ function typeNodeToIR(node: ts.TypeNode): IRType {
 		}
 		// Handle generic arrays: Array<T> and array<T>
 		if ((typeName === 'Array' || typeName === 'array') && node.typeArguments && node.typeArguments.length === 1) {
-			return { kind: 'array', of: typeNodeToIR(node.typeArguments[0]!) };
+			return { kind: 'array', of: typeNodeToIR(node.typeArguments[0]!, constStringArrays) };
 		}
-        if (typeName === 'Promise' && node.typeArguments && node.typeArguments.length === 1) {
-            return { kind: 'promise', of: typeNodeToIR(node.typeArguments[0]!) };
-        }
-        return { kind: 'ref', name: typeName };
-    }
+		if (typeName === 'Promise' && node.typeArguments && node.typeArguments.length === 1) {
+			return { kind: 'promise', of: typeNodeToIR(node.typeArguments[0]!, constStringArrays) };
+		}
+		return { kind: 'ref', name: typeName };
+	}
 	if (ts.isLiteralTypeNode(node)) {
 		if (ts.isStringLiteral(node.literal)) return { kind: 'literal', value: node.literal.text };
 		if (node.literal.kind === ts.SyntaxKind.TrueKeyword) return { kind: 'literal', value: true };
@@ -558,11 +595,11 @@ export type IRFunction = {
 	returnType?: IRType;
 };
 
-function extractFunctionFromStatement(stmt: ts.Statement): IRFunction | IRFunction[] | undefined {
+function extractFunctionFromStatement(stmt: ts.Statement, constStringArrays?: ConstStringArrayMap): IRFunction | IRFunction[] | undefined {
 	if (ts.isFunctionDeclaration(stmt) && stmt.name) {
 		const name = stmt.name.text;
-		const params = (stmt.parameters || []).map(paramToIRParam);
-		const returnType = stmt.type ? typeNodeToIRRef(stmt.type) : undefined;
+		const params = (stmt.parameters || []).map((p) => paramToIRParam(p, constStringArrays));
+		const returnType = stmt.type ? typeNodeToIRRef(stmt.type, constStringArrays) : undefined;
 		return { name, params, returnType };
 	}
 	if (ts.isVariableStatement(stmt)) {
@@ -572,8 +609,8 @@ function extractFunctionFromStatement(stmt: ts.Statement): IRFunction | IRFuncti
 			const name = decl.name.text;
 			const init = decl.initializer;
 			if (init && (ts.isFunctionExpression(init) || ts.isArrowFunction(init))) {
-				const params = (init.parameters || []).map(paramToIRParam);
-				const returnType = init.type ? typeNodeToIRRef(init.type) : undefined;
+				const params = (init.parameters || []).map((p) => paramToIRParam(p, constStringArrays));
+				const returnType = init.type ? typeNodeToIRRef(init.type, constStringArrays) : undefined;
 				out.push({ name, params, returnType });
 			}
 		}
@@ -582,15 +619,31 @@ function extractFunctionFromStatement(stmt: ts.Statement): IRFunction | IRFuncti
 	return undefined;
 }
 
-function paramToIRParam(p: ts.ParameterDeclaration): IRFunctionParam {
+function paramToIRParam(p: ts.ParameterDeclaration, constStringArrays?: ConstStringArrayMap): IRFunctionParam {
 	const name = getPropertyName(p.name);
 	const optional = p.questionToken != null;
-	const type = p.type ? typeNodeToIRRef(p.type) : undefined;
+	const type = p.type ? typeNodeToIRRef(p.type, constStringArrays) : undefined;
 	return { name, optional, type };
 }
 
 // Similar to typeNodeToIR, but preserves references as refs instead of defaulting to 'any'
-function typeNodeToIRRef(node: ts.TypeNode): IRType {
+function typeNodeToIRRef(node: ts.TypeNode, constStringArrays?: ConstStringArrayMap): IRType {
+	// Handle typeof <ConstStringArray>[number] -> union of string literals
+	if (ts.isIndexedAccessTypeNode(node)) {
+		const obj = node.objectType;
+		const idx = node.indexType;
+		if (
+			ts.isTypeQueryNode(obj) &&
+			ts.isIdentifier(obj.exprName) &&
+			(idx.kind === ts.SyntaxKind.NumberKeyword ||
+				(ts.isTypeReferenceNode(idx) && ts.isIdentifier(idx.typeName) && idx.typeName.text === 'number'))
+		) {
+			const values = constStringArrays?.get(obj.exprName.text) || [];
+			if (values.length > 0) {
+				return { kind: 'union', of: values.map((v) => ({ kind: 'literal', value: v }) as IRType) };
+			}
+		}
+	}
 	if (ts.isTypeReferenceNode(node)) {
 		const typeName = ts.isIdentifier(node.typeName) ? node.typeName.text : getEntityNameText(node.typeName);
 		if (typeName === 'Date') return { kind: 'date' };
@@ -603,19 +656,47 @@ function typeNodeToIRRef(node: ts.TypeNode): IRType {
 			return { kind: 'any' };
 		}
 		if ((typeName === 'Array' || typeName === 'array') && node.typeArguments && node.typeArguments.length === 1) {
-			return { kind: 'array', of: typeNodeToIR(node.typeArguments[0]!) };
+			return { kind: 'array', of: typeNodeToIR(node.typeArguments[0]!, constStringArrays) };
 		}
-        if (typeName === 'Promise' && node.typeArguments && node.typeArguments.length === 1) {
-            return { kind: 'promise', of: typeNodeToIR(node.typeArguments[0]!) };
-        }
+		if (typeName === 'Promise' && node.typeArguments && node.typeArguments.length === 1) {
+			return { kind: 'promise', of: typeNodeToIR(node.typeArguments[0]!, constStringArrays) };
+		}
 
-        return { kind: 'ref', name: typeName };
-    }
+		return { kind: 'ref', name: typeName };
+	}
 	// Preserve tuple structure as-is
 	if (ts.isTupleTypeNode(node)) {
-		return { kind: 'tuple', elements: node.elements.map((el) => typeNodeToIRRef(el)) };
+		return { kind: 'tuple', elements: node.elements.map((el) => typeNodeToIRRef(el, constStringArrays)) };
 	}
-	return typeNodeToIR(node);
+	return typeNodeToIR(node, constStringArrays);
+}
+
+// Find and store literal values for specific const arrays, e.g. orderByColumns
+function collectConstStringArrayLiterals(source: ts.SourceFile): ConstStringArrayMap {
+	const map: ConstStringArrayMap = new Map();
+	for (const stmt of source.statements) {
+		if (!ts.isVariableStatement(stmt)) continue;
+		const isConst = (stmt.declarationList.flags & ts.NodeFlags.Const) !== 0;
+		if (!isConst) continue;
+		for (const decl of stmt.declarationList.declarations) {
+			if (!ts.isIdentifier(decl.name)) continue;
+			const varName = decl.name.text;
+			if (!decl.initializer) continue;
+			let init: ts.Expression = decl.initializer as ts.Expression;
+			// Unwrap "as const"
+			while (ts.isAsExpression(init)) {
+				init = init.expression;
+			}
+			if (ts.isArrayLiteralExpression(init)) {
+				const values: string[] = [];
+				for (const el of init.elements) {
+					if (ts.isStringLiteral(el)) values.push(el.text);
+				}
+				if (values.length > 0) map.set(varName, values);
+			}
+		}
+	}
+	return map;
 }
 
 function encodeRawString(s: string): string {
@@ -783,17 +864,17 @@ function printRsType(t: IRType, clientType: DatabaseClient['type'], ir: Rescript
 			if (t.name === 'Database') return mapDatabaseRef(clientType);
 			if (t.name === 'JSON') return 'JSON.t';
 			return lowerFirst(t.name);
-        case 'literal': {
-            if (typeof t.value === 'string') {
-                // Print single string literal types as a polymorphic variant
-                return `[#\"${escapeVariant(t.value)}\"]`;
-            }
-            if (typeof t.value === 'number') return 'float';
-            if (typeof t.value === 'boolean') return 'bool';
-            if (t.value === null) return 'Null.t<unknown>';
-            console.warn(`Literal '${String(t.value)}' maps to ReScript 'unknown'`);
-            return 'unknown';
-        }
+		case 'literal': {
+			if (typeof t.value === 'string') {
+				// Print single string literal types as a polymorphic variant
+				return `[#\"${escapeVariant(t.value)}\"]`;
+			}
+			if (typeof t.value === 'number') return 'float';
+			if (typeof t.value === 'boolean') return 'bool';
+			if (t.value === null) return 'Null.t<unknown>';
+			console.warn(`Literal '${String(t.value)}' maps to ReScript 'unknown'`);
+			return 'unknown';
+		}
 		case 'array':
 			return `array<${printRsType(t.of, clientType, ir, ctx)}>`;
 		case 'tuple': {

@@ -397,7 +397,7 @@ function generateCodeFromTsDescriptor(client: SQLiteClient, queryName: string, t
 		writer.write(' as const;');
 		writer.blankLine();
 		writer.writeLine(`const NumericOperatorList = ['=', '<>', '>', '<', '>=', '<='] as const;`);
-        writer.writeLine(`type NumericOperator = '=' | '<>' | '>' | '<' | '>=' | '<=';`);
+		writer.writeLine('type NumericOperator = typeof NumericOperatorList[number];');
 		if (hasStringColumn(tsDescriptor.columns)) {
 			writer.writeLine(`type StringOperator = '=' | '<>' | '>' | '<' | '>=' | '<=' | 'LIKE';`);
 		}

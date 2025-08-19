@@ -57,7 +57,7 @@ describe('generateReScriptFromSQLite', () => {
 			fs.writeFileSync('sqlite-generate-rescript.select-users.ts.txt', originalTs);
 		}
 
-		assert.deepEqual(rescript, fs.readFileSync('sqlite-generate-rescript.select-users.rescript.txt', 'utf8'));
+		assert.equal(rescript, fs.readFileSync('sqlite-generate-rescript.select-users.rescript.txt', 'utf8'));
 	});
 
 	it('generates code for a nested select (@nested)', async () => {
@@ -116,7 +116,7 @@ describe('generateReScriptFromSQLite', () => {
 			fs.writeFileSync('sqlite-generate-rescript.select-user-posts-nested.ts.txt', originalTs);
 		}
 
-		assert.deepEqual(rescript, fs.readFileSync('sqlite-generate-rescript.select-user-posts-nested.rescript.txt', 'utf8'));
+		assert.equal(rescript, fs.readFileSync('sqlite-generate-rescript.select-user-posts-nested.rescript.txt', 'utf8'));
 	});
 
 	it('generates code for a dynamic query (@dynamicQuery)', async () => {
@@ -170,6 +170,6 @@ AND m2.descr = :description`;
 			fs.writeFileSync('sqlite-generate-rescript.dynamic-query01.ts.txt', originalTs);
 		}
 
-		assert.deepEqual(rescript, fs.readFileSync('sqlite-generate-rescript.dynamic-query01.rescript.txt', 'utf8'));
+		assert.equal(rescript, fs.readFileSync('sqlite-generate-rescript.dynamic-query01.rescript.txt', 'utf8'));
 	});
 });

@@ -3,17 +3,18 @@ import fs from 'node:fs';
 import { generateReScriptFromMySQL } from '../../src/rescript';
 import type { SchemaInfo } from '../../src/schema-info';
 import { createMysqlClientForTest, loadMysqlSchema } from '../../src/queryExectutor';
+import { MySqlDialect } from '../../src/types';
 
 // Toggle to regenerate fixture files locally if needed
-const WRITE_FILES = true;
+const WRITE_FILES = false;
 
 describe('generateReScriptFromMySQL', () => {
 	let schemaInfo!: SchemaInfo;
-	let databaseClient: import('../../src/types').MySqlDialect;
+	let databaseClient: MySqlDialect;
 
 	before(async () => {
 		databaseClient = await createMysqlClientForTest('mysql://root:password@localhost/mydb');
-		const schemaRes = await loadMysqlSchema(databaseClient.client as any, databaseClient.schema);
+		const schemaRes = await loadMysqlSchema(databaseClient.client, databaseClient.schema);
 		if (schemaRes.isErr()) {
 			assert.fail(`Failed to load MySQL schema: ${schemaRes.error.description}`);
 		}
@@ -48,7 +49,7 @@ where u.id in (:ids)
 			fs.writeFileSync('mysql-generate-rescript.select-users.ts.txt', originalTs);
 		}
 
-		assert.ok(rescript && rescript.length > 0, 'Expected ReScript output to be non-empty');
+		assert.equal(rescript, fs.readFileSync('mysql-generate-rescript.select-users.rescript.txt', 'utf8'));
 	});
 
 	it('generates code for a nested select (@nested)', async () => {
@@ -76,7 +77,7 @@ INNER JOIN posts on posts.fk_user = users.id`;
 			fs.writeFileSync('mysql-generate-rescript.select-user-posts-nested.ts.txt', originalTs);
 		}
 
-		assert.ok(rescript && rescript.length > 0, 'Expected ReScript output to be non-empty');
+		assert.equal(rescript, fs.readFileSync('mysql-generate-rescript.select-user-posts-nested.rescript.txt', 'utf8'));
 	});
 
 	it('generates code for a dynamic query (@dynamicQuery)', async () => {
@@ -101,6 +102,6 @@ AND m2.descr = :description`;
 			fs.writeFileSync('mysql-generate-rescript.dynamic-query01.ts.txt', originalTs);
 		}
 
-		assert.ok(rescript && rescript.length > 0, 'Expected ReScript output to be non-empty');
+		assert.equal(rescript, fs.readFileSync('mysql-generate-rescript.dynamic-query01.rescript.txt', 'utf8'));
 	});
 });

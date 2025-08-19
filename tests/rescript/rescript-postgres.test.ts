@@ -5,7 +5,7 @@ import { createSchemaInfo, createTestClient } from '../postgres/schema';
 import { PgDielect } from '../../src/types';
 
 // Toggle to regenerate fixture files locally if needed
-const WRITE_FILES = true;
+const WRITE_FILES = false;
 
 describe('generateReScriptFromPostgres', () => {
 	const client = createTestClient();
@@ -38,7 +38,7 @@ describe('generateReScriptFromPostgres', () => {
 		}
 
 		// For now, just assert non-empty output; fixtures can be added later
-		assert.ok(rescript && rescript.length > 0, 'Expected ReScript output to be non-empty');
+		assert.equal(rescript, fs.readFileSync('postgres-generate-rescript.select-users.rescript.txt', 'utf8'));
 	});
 
 	it('generates code for a nested select (@nested)', async () => {
@@ -67,7 +67,7 @@ INNER JOIN posts on posts.fk_user = users.id`;
 			fs.writeFileSync('postgres-generate-rescript.select-user-posts-nested.ts.txt', originalTs);
 		}
 
-		assert.ok(rescript && rescript.length > 0, 'Expected ReScript output to be non-empty');
+		assert.equal(rescript, fs.readFileSync('postgres-generate-rescript.select-user-posts-nested.rescript.txt', 'utf8'));
 	});
 
 	it('generates code for a dynamic query (@dynamicQuery)', async () => {
@@ -93,7 +93,7 @@ AND m2.descr = :description`;
 			fs.writeFileSync('postgres-generate-rescript.dynamic-query01.ts.txt', originalTs);
 		}
 
-		assert.ok(rescript && rescript.length > 0, 'Expected ReScript output to be non-empty');
+		assert.equal(rescript, fs.readFileSync('postgres-generate-rescript.dynamic-query01.rescript.txt', 'utf8'));
 	});
 
 	it('generates code for nested JSON literals', async () => {
@@ -130,6 +130,26 @@ AND m2.descr = :description`;
 		assert.equal(rescript, fs.readFileSync('postgres-generate-rescript.select-json-nested.rescript.txt', 'utf8'));
 	});
 
+	it('generates code for ORDER BY parameter', async () => {
+		const sql = 'SELECT id FROM mytable1 ORDER BY :sort';
+
+		const queryName = 'selectOrderBy';
+		const { rescript, originalTs } = await generateReScriptFromPostgres({
+			sql,
+			queryName,
+			isCrudFile: false,
+			databaseClient,
+			schemaInfo
+		});
+
+		if (WRITE_FILES) {
+			fs.writeFileSync('postgres-generate-rescript.select-order-by.rescript.txt', rescript);
+			fs.writeFileSync('postgres-generate-rescript.select-order-by.ts.txt', originalTs);
+		}
+
+		assert.equal(rescript, fs.readFileSync('postgres-generate-rescript.select-order-by.rescript.txt', 'utf8'));
+	});
+
 	it('maps bigint, json, and null to ReScript types', async () => {
 		const sql = `SELECT
 		CAST(123 AS bigint) as big,
@@ -150,5 +170,52 @@ AND m2.descr = :description`;
 			fs.writeFileSync('postgres-generate-rescript.select-bigint-json-null.rescript.txt', rescript);
 			fs.writeFileSync('postgres-generate-rescript.select-bigint-json-null.ts.txt', originalTs);
 		}
+
+		assert.equal(rescript, fs.readFileSync('postgres-generate-rescript.select-bigint-json-null.rescript.txt', 'utf8'));
+	});
+
+	it('handled dynamic order by', async () => {
+		const sql = `SELECT * FROM users ORDER BY :sort`;
+
+		const queryName = 'selectUsers';
+		const { rescript, originalTs } = await generateReScriptFromPostgres({
+			sql,
+			queryName,
+			isCrudFile: false,
+			databaseClient,
+			schemaInfo
+		});
+
+		if (WRITE_FILES) {
+			fs.writeFileSync('postgres-generate-rescript.select-users-order-by.rescript.txt', rescript);
+			fs.writeFileSync('postgres-generate-rescript.select-users-order-by.ts.txt', originalTs);
+		}
+
+		assert.equal(rescript, fs.readFileSync('postgres-generate-rescript.select-users-order-by.rescript.txt', 'utf8'));
+	});
+
+	it.skip('handled ? order by', async () => {
+		const sql = `SELECT 
+    emp_no, 
+    concat(first_name, ' ', last_name), 
+    year(hire_date) 
+FROM employees
+ORDER BY ?`;
+
+		const queryName = 'selectUsers';
+		const { rescript, originalTs } = await generateReScriptFromPostgres({
+			sql,
+			queryName,
+			isCrudFile: false,
+			databaseClient,
+			schemaInfo
+		});
+
+		if (WRITE_FILES) {
+			fs.writeFileSync('postgres-generate-rescript.select-users-order-by-question.rescript.txt', rescript);
+			fs.writeFileSync('postgres-generate-rescript.select-users-order-by-question.ts.txt', originalTs);
+		}
+
+		assert.equal(rescript, fs.readFileSync('postgres-generate-rescript.select-users-order-by-question.rescript.txt', 'utf8'));
 	});
 });

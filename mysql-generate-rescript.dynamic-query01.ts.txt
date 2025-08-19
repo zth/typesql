@@ -34,7 +34,7 @@ const selectFragments = {
 } as const;
 
 const NumericOperatorList = ['=', '<>', '>', '<', '>=', '<='] as const;
-type NumericOperator = '=' | '<>' | '>' | '<' | '>=' | '<=';
+type NumericOperator = typeof NumericOperatorList[number];
 type StringOperator = '=' | '<>' | '>' | '<' | '>=' | '<=' | 'LIKE';
 type SetOperator = 'IN' | 'NOT IN';
 type BetweenOperator = 'BETWEEN';
