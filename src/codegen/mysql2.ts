@@ -7,11 +7,7 @@ import {
 	MySqlDialect,
 	TypeSqlError,
 	TsParameterDescriptor,
-	TypeSqlDialect,
-	type SQLiteDialect,
-	type LibSqlClient,
-	type BunDialect,
-	PgDielect,
+	TypeSqlDialect, type SQLiteDialect, type LibSqlClient, type BunDialect, PgDielect,
 	QueryType
 } from './types';
 import fs from 'node:fs';
@@ -127,13 +123,13 @@ export function generateTsCodeForMySQL(tsDescriptor: TsDescriptor, fileName: str
 
 	const allParameters = tsDescriptor.data
 		? tsDescriptor.data.map((field, index) => {
-				//:nameIsSet, :name, :valueIsSet, :value....
-				if (crud && index % 2 === 0) {
-					const nextField = tsDescriptor.data![index + 1];
-					return `data.${nextField.name} !== undefined`;
-				}
-				return `data.${field.name}`;
-			})
+			//:nameIsSet, :name, :valueIsSet, :value....
+			if (crud && index % 2 === 0) {
+				const nextField = tsDescriptor.data![index + 1];
+				return `data.${nextField.name} !== undefined`;
+			}
+			return `data.${field.name}`;
+		})
 		: [];
 	allParameters.push(...tsDescriptor.parameterNames.map((paramName) => generateParam(paramName)));
 
@@ -706,8 +702,8 @@ export async function generateTsFile(client: DatabaseClient, sqlFile: string, ts
 		queryName,
 		sqlContent,
 		schemaInfo,
-		isCrudFile
-	});
+		isCrudFile,
+	})
 
 	if (isLeft(tsContentResult)) {
 		console.error('ERROR: ', tsContentResult.left.description);
