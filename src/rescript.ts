@@ -96,6 +96,7 @@ export type IRType =
 	| { kind: 'int' | 'float' | 'string' | 'bool' | 'date' | 'bytes' | 'any' }
 	| { kind: 'array'; of: IRType }
 	| { kind: 'union'; of: IRType[] }
+	| { kind: 'tuple'; elements: IRType[] }
 	| { kind: 'object'; fields: IRField[] }
 	| { kind: 'literal'; value: string | number | boolean | null | undefined }
 	| { kind: 'ref'; name: string };
@@ -167,6 +168,11 @@ function typeNodeToIR(node: ts.TypeNode): IRType {
 			return { name, optional, type: typeNodeToIR(typeNode) };
 		});
 		return { kind: 'object', fields };
+	}
+	// Tuple types, e.g. ['id', StringOperator, int | null]
+	if (ts.isTupleTypeNode(node)) {
+		const elements = node.elements.map((el) => typeNodeToIR(el));
+		return { kind: 'tuple', elements };
 	}
 	if (ts.isArrayTypeNode(node)) {
 		return { kind: 'array', of: typeNodeToIR(node.elementType) };
@@ -279,6 +285,10 @@ function typeNodeToIRRef(node: ts.TypeNode): IRType {
 
 		return { kind: 'ref', name: typeName };
 	}
+	// Preserve tuple structure as-is
+	if (ts.isTupleTypeNode(node)) {
+		return { kind: 'tuple', elements: node.elements.map((el) => typeNodeToIRRef(el)) };
+	}
 	return typeNodeToIR(node);
 }
 
@@ -304,12 +314,12 @@ export function printRescript(ir: RescriptIR, clientType: DatabaseClient['type']
 		}
 		const first = allTypes[0]!;
 		const firstName = lowerFirst(first.name);
-		const firstCtx = first.role === 'Params' ? ({ paramsTopLevel: true } as const) : undefined;
+		const firstCtx = { currentAliasName: first.name, paramsTopLevel: first.role === 'Params' ? true : undefined } as const;
 		lines.push(`type rec ${firstName} = ${printRsType(first.aliasOf, clientType, ir, firstCtx)}`);
 		for (let i = 1; i < allTypes.length; i++) {
 			const t = allTypes[i]!;
 			const name = lowerFirst(t.name);
-			const ctx = t.role === 'Params' ? ({ paramsTopLevel: true } as const) : undefined;
+			const ctx = { currentAliasName: t.name, paramsTopLevel: t.role === 'Params' ? true : undefined } as const;
 			lines.push(`and ${name} = ${printRsType(t.aliasOf, clientType, ir, ctx)}`);
 		}
 		lines.push('');
@@ -322,15 +332,85 @@ export function printRescript(ir: RescriptIR, clientType: DatabaseClient['type']
 		const returnType = printFnParamType(mainFn.returnType, clientType, ir) || 'unit';
 		const signature = `${paramsStr} => ${returnType}`;
 
+		const param = mainFn.params[1];
+		const paramType = param?.type;
+
 		lines.push(`external ${ir.mainName}: ${signature} = "${ir.mainName}"`);
-		const paramArgStr = mainFn.params.length > 1 ? ', params' : '';
+		const paramArgStr = param != null ? ', params' : '';
 		lines.push(`let run: ${signature} = (db${paramArgStr}) => {`);
+		if (paramType?.kind === 'ref' && paramType.name.endsWith('DynamicParams')) {
+			// Locate the DynamicParams alias and its 'where' element type
+			const dynParams = ir.types.find((t) => t.name === paramType.name);
+			const whereElemTypeName = (() => {
+				if (!dynParams || dynParams.aliasOf.kind !== 'object') return undefined;
+				const whereField = dynParams.aliasOf.fields.find((f) => f.name === 'where');
+				if (!whereField) return undefined;
+				const arr = ((): IRType | undefined => {
+					const ty = whereField.type;
+					if (ty.kind === 'array') return ty.of;
+					if (ty.kind === 'union') {
+						// optional may be represented as union with undefined
+						const arrMem = ty.of.find((m) => m.kind === 'array') as Extract<IRType, { kind: 'array' }> | undefined;
+						return arrMem?.of;
+					}
+					return undefined;
+				})();
+				if (arr && arr.kind === 'ref') return arr.name;
+				return undefined;
+			})();
+
+			const whereAlias = whereElemTypeName ? ir.types.find((t) => t.name === whereElemTypeName) : undefined;
+			const whereUnion = whereAlias && whereAlias.aliasOf.kind === 'union' ? whereAlias.aliasOf.of : undefined;
+			const whereTuples = whereUnion?.filter((m) => m.kind === 'tuple') as Extract<IRType, { kind: 'tuple' }>[] | undefined;
+
+			lines.push(`  let params = {`);
+			lines.push(`    ...params,`);
+			lines.push(`    where: ?switch params.where {`);
+			lines.push(`    | Some(list) =>`);
+			lines.push(`      Some(`);
+			lines.push(`        list->Array.map(w =>`);
+			lines.push(`          switch w {`);
+			if (whereTuples && whereTuples.length > 0) {
+				for (const tu of whereTuples) {
+					const arm = renderTupleToMatchArm(tu);
+					lines.push(`          | ${arm.pattern} => ${arm.toTuple}->Obj.magic`);
+				}
+			}
+			lines.push(`          }`);
+			lines.push(`        ),`);
+			lines.push(`      )`);
+			lines.push(`    | None => None`);
+			lines.push(`    },`);
+			lines.push(`  }`);
+		}
 		lines.push(`  ${ir.mainName}(db${paramArgStr})`);
 		lines.push(`}`);
 		lines.push('');
 	}
 
 	return lines.join('\n');
+}
+
+function renderTupleToMatchArm(t: Extract<IRType, { kind: 'tuple' }>): { pattern: string; toTuple: string } {
+	const [col, _op, ...vals] = t.elements;
+	const colName = col.kind === 'literal' && typeof col.value === 'string' ? col.value : 'unknown';
+	// Match constructor naming produced by renderTupleAsVariantCtor
+	const ctorName = (() => {
+		const op = _op;
+		let suffix = 'compare';
+		if (op.kind === 'ref') {
+			const name = op.name.toLowerCase();
+			if (name.includes('between')) suffix = 'between';
+			else if (name.includes('set')) suffix = 'list';
+		}
+		return `${toPascalCase(colName)}_${suffix}`;
+	})();
+	// Build pattern and tuple expr
+	const argNames: string[] = ['op'];
+	for (let i = 0; i < vals.length; i++) argNames.push(`v${i + 1}`);
+	const pattern = `${ctorName}(${argNames.join(', ')})`;
+	const tupleParts = [`"${colName}"`, ...argNames];
+	return { pattern, toTuple: `(${tupleParts.join(', ')})` };
 }
 
 function printFnParamType(t: IRType | undefined, clientType: DatabaseClient['type'], ir: RescriptIR): string | undefined {
@@ -342,6 +422,7 @@ type PrintCtx = {
 	// When true, we're printing the top-level Params alias object.
 	// Only the first encountered object should treat optional fields as `?:`.
 	paramsTopLevel?: boolean;
+	currentAliasName?: string;
 };
 
 function printRsType(t: IRType, clientType: DatabaseClient['type'], ir: RescriptIR, ctx?: PrintCtx): string {
@@ -375,7 +456,11 @@ function printRsType(t: IRType, clientType: DatabaseClient['type'], ir: Rescript
 			return 'unknown';
 		}
 		case 'array':
-			return `array<${printRsType(t.of, clientType, ir)}>`;
+			return `array<${printRsType(t.of, clientType, ir, ctx)}>`;
+		case 'tuple': {
+			const elems = t.elements.map((e) => printRsType(e, clientType, ir, ctx)).join(', ');
+			return `(${elems})`;
+		}
 		case 'union': {
 			const types = t.of;
 			const hasNull = types.some(isNullLiteral);
@@ -406,6 +491,14 @@ function printRsType(t: IRType, clientType: DatabaseClient['type'], ir: Rescript
 				return wrap(inner);
 			}
 
+			// Dynamic where: union of tuple types -> ReScript variant
+			const isAllTuples = nonNil.length > 0 && nonNil.every((x) => x.kind === 'tuple');
+			if (isAllTuples && ctx?.currentAliasName && ctx.currentAliasName.endsWith('Where')) {
+				const ctors = nonNil.map((tu) => renderTupleAsVariantCtor(tu as Extract<IRType, { kind: 'tuple' }>, clientType, ir));
+				const unique = Array.from(new Set(ctors));
+				return '\n' + '| ' + unique.join('\n| ');
+			}
+
 			// Unsupported TS-style multi-type unions: print as unknown with refined inline comment
 			const renderedSet = new Set<string>();
 			for (const part of nonNil) {
@@ -424,18 +517,38 @@ function printRsType(t: IRType, clientType: DatabaseClient['type'], ir: Rescript
 			const fields = t.fields
 				.map((f) => {
 					if (inParamsTopLevel && f.optional) {
-						const ty = printRsType(f.type, clientType, ir, { paramsTopLevel: false });
+						const ty = printRsType(f.type, clientType, ir, { ...ctx, paramsTopLevel: false });
 						return `${lowerFirst(f.name)}?: ${ty}`;
 					}
 					// For non-Params or non-optional: if optional, interpret as `| undefined` and rely on union logic
 					const effectiveType = f.optional ? addUndefinedToIR(f.type) : f.type;
-					const ty = printRsType(effectiveType, clientType, ir, { paramsTopLevel: false });
+					const ty = printRsType(effectiveType, clientType, ir, { ...ctx, paramsTopLevel: false });
 					return `${lowerFirst(f.name)}: ${ty}`;
 				})
 				.join(',\n  ');
 			return `{\n  ${fields}\n}`;
 		}
 	}
+}
+
+function renderTupleAsVariantCtor(t: Extract<IRType, { kind: 'tuple' }>, clientType: DatabaseClient['type'], ir: RescriptIR): string {
+	// Expect [literal string column, operator ref, value, value?]
+	const [col, op, ...vals] = t.elements;
+	const colName = col.kind === 'literal' && typeof col.value === 'string' ? col.value : 'Unknown';
+	const pascalCol = toPascalCase(colName);
+	let suffix = 'compare';
+	let opTy = 'unknown';
+	if (op.kind === 'ref') {
+		const opName = op.name;
+		const lower = lowerFirst(opName);
+		opTy = lower;
+		if (opName.toLowerCase().includes('between')) suffix = 'between';
+		else if (opName.toLowerCase().includes('set')) suffix = 'list';
+		else if (opName.toLowerCase().includes('numeric')) suffix = 'compare';
+		else if (opName.toLowerCase().includes('string')) suffix = 'compare';
+	}
+	const payloadTypes = [opTy, ...vals.map((v) => printRsType(v, clientType, ir))];
+	return `${pascalCol}_${suffix}(${payloadTypes.join(', ')})`;
 }
 
 function isNullLiteral(t: IRType): boolean {
@@ -521,5 +634,7 @@ function formatUnionMemberForComment(t: IRType, clientType: DatabaseClient['type
 		}
 		case 'object':
 			return 'object';
+		case 'tuple':
+			return 'tuple';
 	}
 }

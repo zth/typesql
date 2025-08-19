@@ -4,7 +4,7 @@ import { createSqliteClient, loadDbSchema } from '../../src/sqlite-query-analyze
 import type { SchemaInfo } from '../../src/schema-info';
 import fs from 'node:fs';
 
-const WRITE_FILES = false;
+const WRITE_FILES = true;
 
 describe('api: generateReScriptFromSql (SQLite)', () => {
 	it('generates code for a simple select', async () => {
