@@ -64,22 +64,24 @@ const groupBy = (array, predicate) => {
 
 @@warning("-30")
 type rec selectUserPostsResult = {
-	id: int,
-	name: string,
-	id_2: int,
-	title: string,
-	body: string
+  id: int,
+  name: string,
+  id_2: int,
+  title: string,
+  body: string
 }
 and selectUserPostsNestedUsers = {
-	id: int,
-	name: string,
-	posts: array<selectUserPostsNestedPosts>
+  id: int,
+  name: string,
+  posts: array<selectUserPostsNestedPosts>
 }
 and selectUserPostsNestedPosts = {
-	id: int,
-	title: string,
-	body: string
+  id: int,
+  title: string,
+  body: string
 }
 
 external selectUserPostsNested: (BetterSqlite3.client) => array<selectUserPostsNestedUsers> = "selectUserPostsNested"
-let run = selectUserPostsNested
+let run: (BetterSqlite3.client) => array<selectUserPostsNestedUsers> = (db) => {
+  selectUserPostsNested(db)
+}

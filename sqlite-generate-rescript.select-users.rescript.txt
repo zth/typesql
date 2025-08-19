@@ -35,27 +35,29 @@ function mapArrayToSelectUsersResult(data) {
 
 @@warning("-30")
 type rec selectUsersParams = {
-	ids: Null.t<int>,
-	names: array<string>,
-	scores: array<float>,
-	balances: array<float>
+  ids: Null.t<int>,
+  names: array<string>,
+  scores: array<float>,
+  balances: array<float>
 }
 and selectUsersResult = {
-	id: int,
-	name: string,
-	created_at: option<string>,
-	age: option<int>,
-	score: option<float>,
-	balance: option<float>,
-	is_active: option<float>,
-	blob_col: option<Uint8Array.t>,
-	date_col: option<float>,
-	date_time_col: option<float>,
-	enum_col: option<[#"x-small" | #"small" | #"medium" | #"large" | #"x-large"]>,
-	bool_expr: bool,
-	date_expr: option<Date.t>,
-	datetime_expr: option<Date.t>
+  id: int,
+  name: string,
+  created_at: option<string>,
+  age: option<int>,
+  score: option<float>,
+  balance: option<float>,
+  is_active: option<float>,
+  blob_col: option<Uint8Array.t>,
+  date_col: option<float>,
+  date_time_col: option<float>,
+  enum_col: option<[#"x-small" | #"small" | #"medium" | #"large" | #"x-large"]>,
+  bool_expr: bool,
+  date_expr: option<Date.t>,
+  datetime_expr: option<Date.t>
 }
 
 external selectUsers: (BetterSqlite3.client, selectUsersParams) => array<selectUsersResult> = "selectUsers"
-let run = selectUsers
+let run: (BetterSqlite3.client, selectUsersParams) => array<selectUsersResult> = (db, params) => {
+  selectUsers(db, params)
+}

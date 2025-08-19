@@ -321,8 +321,12 @@ export function printRescript(ir: RescriptIR, clientType: DatabaseClient['type']
 		const paramsStr = paramsTypes.length > 0 ? `(${paramsTypes.join(', ')})` : 'unit';
 		const returnType = printFnParamType(mainFn.returnType, clientType, ir) || 'unit';
 		const signature = `${paramsStr} => ${returnType}`;
+
 		lines.push(`external ${ir.mainName}: ${signature} = "${ir.mainName}"`);
-		lines.push(`let run = ${ir.mainName}`);
+		const paramArgStr = mainFn.params.length > 1 ? ', params' : '';
+		lines.push(`let run: ${signature} = (db${paramArgStr}) => {`);
+		lines.push(`  ${ir.mainName}(db${paramArgStr})`);
+		lines.push(`}`);
 		lines.push('');
 	}
 
@@ -428,8 +432,8 @@ function printRsType(t: IRType, clientType: DatabaseClient['type'], ir: Rescript
 					const ty = printRsType(effectiveType, clientType, ir, { paramsTopLevel: false });
 					return `${lowerFirst(f.name)}: ${ty}`;
 				})
-				.join(',\n\t');
-			return `{\n\t${fields}\n}`;
+				.join(',\n  ');
+			return `{\n  ${fields}\n}`;
 		}
 	}
 }

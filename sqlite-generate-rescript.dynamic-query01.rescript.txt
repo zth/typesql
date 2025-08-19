@@ -124,25 +124,25 @@ function whereCondition(condition) {
 
 @@warning("-30")
 type rec dynamicQuery01DynamicParams = {
-	select?: dynamicQuery01Select,
-	params?: dynamicQuery01Params,
-	where?: array<dynamicQuery01Where>
+  select?: dynamicQuery01Select,
+  params?: dynamicQuery01Params,
+  where?: array<dynamicQuery01Where>
 }
 and dynamicQuery01Params = {
-	name?: Null.t<string>,
-	description?: Null.t<string>
+  name?: Null.t<string>,
+  description?: Null.t<string>
 }
 and dynamicQuery01Result = {
-	id: option<int>,
-	value: option<int>,
-	name: option<string>,
-	description: option<string>
+  id: option<int>,
+  value: option<int>,
+  name: option<string>,
+  description: option<string>
 }
 and dynamicQuery01Select = {
-	id: option<bool>,
-	value: option<bool>,
-	name: option<bool>,
-	description: option<bool>
+  id: option<bool>,
+  value: option<bool>,
+  name: option<bool>,
+  description: option<bool>
 }
 and numericOperator = [#"=" | #"<>" | #">" | #"<" | #">=" | #"<="]
 and stringOperator = [#"=" | #"<>" | #">" | #"<" | #">=" | #"<=" | #"LIKE"]
@@ -151,4 +151,6 @@ and betweenOperator = [#"BETWEEN"]
 and dynamicQuery01Where = unknown /* any */
 
 external dynamicQuery01: (BetterSqlite3.client, dynamicQuery01DynamicParams) => array<dynamicQuery01Result> = "dynamicQuery01"
-let run = dynamicQuery01
+let run: (BetterSqlite3.client, dynamicQuery01DynamicParams) => array<dynamicQuery01Result> = (db, params) => {
+  dynamicQuery01(db, params)
+}
