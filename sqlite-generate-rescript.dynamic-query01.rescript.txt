@@ -1,3 +1,5 @@
+%%raw(`import { EOL } from 'os';`)
+
 @@warning("-30")
 type rec dynamicQuery01DynamicParams = {
 	select?: dynamicQuery01Select,
@@ -20,11 +22,20 @@ and dynamicQuery01Select = {
 	name: option<bool>,
 	description: option<bool>
 }
-and numericOperator = unknown
+and numericOperator = [#"=" | #"<>" | #">" | #"<" | #">=" | #"<="]
 and stringOperator = [#"=" | #"<>" | #">" | #"<" | #">=" | #"<=" | #"LIKE"]
 and setOperator = [#"IN" | #"NOT IN"]
 and betweenOperator = [#"BETWEEN"]
 and dynamicQuery01Where = unknown /* any */
+
+%%raw("const selectFragments = {
+    id: `m1.id`,
+    value: `m1.value`,
+    name: `m2.name`,
+    description: `m2.descr`,
+};")
+
+%%raw("const NumericOperatorList = ['=', '<>', '>', '<', '>=', '<='];")
 
 %%raw("function mapArrayToDynamicQuery01Result(data, select) {
     const result = {};

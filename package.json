@@ -7,7 +7,8 @@
 		"typesql": "cli.js"
 	},
 	"scripts": {
-		"build": "tsc -w",
+		"build": "tsc",
+		"watch": "tsc -w",
 		"test": "mocha --enable-source-maps dist/tests/**/*.js --watch --watch-files **/*.js",
 		"test:rescript": "mocha --enable-source-maps dist/tests/rescript/*.js --watch --watch-files dist/tests/rescript/**/*.js",
 		"antlr4ts": "antlr4ts -Xexact-output-dir -o ./parser/ ./grammar/*.g4",

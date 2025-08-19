@@ -116,6 +116,7 @@ export type RescriptIR = {
 	mainName: string; // function to expose as run (may be `${queryName}Nested`)
 	pascalName: string; // e.g. SelectUsers
 	types: IRTypeDef[]; // Extracted types we care about
+	consts: string[]; // JS bodies for const declarations to emit via %%raw
 	functions: IRFunction[]; // Functions with signatures and optional JS bodies
 };
 
@@ -125,6 +126,7 @@ export function extractRescriptIRFromTypeScript(tsCode: string, queryName: strin
 	const pascalName = toPascalCase(queryName);
 
 	const types: IRTypeDef[] = [];
+	const consts: string[] = [];
 	const functions: IRFunction[] = [];
 
 	for (const stmt of source.statements) {
@@ -146,8 +148,18 @@ export function extractRescriptIRFromTypeScript(tsCode: string, queryName: strin
 			const aliasOf = typeNodeToIR(stmt.type);
 			types.push({ name, role, aliasOf });
 		}
+		// Collect const-based functions
 		const fn = extractFunctionFromStatement(stmt, source);
-		if (fn) functions.push(...(Array.isArray(fn) ? fn : [fn]));
+		if (fn) {
+			functions.push(...(Array.isArray(fn) ? fn : [fn]));
+		} else if (ts.isVariableStatement(stmt)) {
+			// If it's a const declaration (not let/var) and not a function, emit as raw const
+			const isConst = (stmt.declarationList.flags & ts.NodeFlags.Const) === ts.NodeFlags.Const;
+			if (isConst) {
+				const jsBody = sanitizeJsBody(tryTranspileToJs(stmt.getText(source)));
+				if (jsBody) consts.push(jsBody);
+			}
+		}
 	}
 
 	// Prefer nested function as main if available
@@ -155,7 +167,7 @@ export function extractRescriptIRFromTypeScript(tsCode: string, queryName: strin
 	const hasNested = functions.some((f) => f.name === nestedCandidate);
 	const mainName = hasNested ? nestedCandidate : queryName;
 
-	return { queryName, mainName, pascalName, types, functions };
+	return { queryName, mainName, pascalName, types, consts, functions };
 }
 
 function typeNodeToIR(node: ts.TypeNode): IRType {
@@ -362,6 +374,15 @@ export function printRescript(ir: RescriptIR, clientType: DatabaseClient['type']
 		lines.push('');
 	}
 
+	// Emit consts after types, before functions
+	if (ir.consts.length > 0) {
+		for (const js of ir.consts) {
+			const encoded = encodeRawString(js);
+			lines.push(`%%raw("${encoded}")`);
+			lines.push('');
+		}
+	}
+
 	// Emit helper functions first, then main query function last
 	const helperFns = ir.functions.filter((f) => f.name !== ir.mainName);
 	const mainFns = ir.functions.filter((f) => f.name === ir.mainName);
@@ -388,7 +409,7 @@ export function printRescript(ir: RescriptIR, clientType: DatabaseClient['type']
 }
 
 function hasOsEolImport(tsCode: string): boolean {
-	return tsCode.includes('import { EOL } from "os"');
+	return tsCode.includes("import { EOL } from 'os'");
 }
 
 function printFnParamType(t: IRType | undefined, clientType: DatabaseClient['type'], ir: RescriptIR): string | undefined {
