@@ -6,13 +6,13 @@ import fs from 'node:fs';
 
 const WRITE_FILES = false;
 
-describe('api: generateReScriptFromSql (SQLite)', () => {
+describe('generateReScriptFromSQLite', () => {
 	it('generates code for a simple select', async () => {
 		const clientResult = createSqliteClient('better-sqlite3', ':memory:', [], []);
-		if ((clientResult as any).isErr && (clientResult as any).isErr()) {
+		if (clientResult.isErr() || clientResult.value.type !== 'better-sqlite3') {
 			assert.fail('Failed to create SQLite client');
 		}
-		const databaseClient = (clientResult as any).value;
+		const databaseClient = clientResult.value;
 
 		// Create a simple table
 		databaseClient.client.exec(`
@@ -62,10 +62,10 @@ describe('api: generateReScriptFromSql (SQLite)', () => {
 
 	it('generates code for a nested select (@nested)', async () => {
 		const clientResult = createSqliteClient('better-sqlite3', ':memory:', [], []);
-		if ((clientResult as any).isErr && (clientResult as any).isErr()) {
+		if (clientResult.isErr() || clientResult.value.type !== 'better-sqlite3') {
 			assert.fail('Failed to create SQLite client');
 		}
-		const databaseClient = (clientResult as any).value;
+		const databaseClient = clientResult.value;
 
 		// Create tables similar to the docs example
 		databaseClient.client.exec(`
@@ -121,10 +121,10 @@ describe('api: generateReScriptFromSql (SQLite)', () => {
 
 	it('generates code for a dynamic query (@dynamicQuery)', async () => {
 		const clientResult = createSqliteClient('better-sqlite3', ':memory:', [], []);
-		if ((clientResult as any).isErr && (clientResult as any).isErr()) {
+		if (clientResult.isErr() || clientResult.value.type !== 'better-sqlite3') {
 			assert.fail('Failed to create SQLite client');
 		}
-		const databaseClient = (clientResult as any).value;
+		const databaseClient = clientResult.value;
 
 		// Create minimal tables for the dynamic query
 		databaseClient.client.exec(`

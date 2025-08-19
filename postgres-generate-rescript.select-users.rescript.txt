@@ -1,0 +1,39 @@
+%%raw("async function selectUsers(client, params) {
+  const sql = `
+	select u.*, true as bool_expr, current_date as date_expr, current_timestamp as datetime_expr from users u where u.id = $1 and u.name = $2
+	`
+  return client.query({ text: sql, rowMode: 'array', values: [params.id, params.name] })
+    .then((res) => res.rows.length > 0 ? mapArrayToSelectUsersResult(res.rows[0]) : null)
+}
+
+function mapArrayToSelectUsersResult(data) {
+  const result = {
+    id: data[0],
+    name: data[1],
+    email: data[2],
+    bool_expr: data[3],
+    date_expr: new Date(data[4]),
+    datetime_expr: data[5] != null ? new Date(data[5]) : data[5],
+  }
+  return result
+}
+")
+
+@@warning("-30")
+type rec selectUsersParams = {
+  id: int,
+  name: string
+}
+and selectUsersResult = {
+  id: int,
+  name: string,
+  email: Null.t<string>,
+  bool_expr: bool,
+  date_expr: Date.t,
+  datetime_expr: Null.t<Date.t>
+}
+
+external selectUsers: (Pg.client, selectUsersParams) => promise<Null.t<selectUsersResult>> = "selectUsers"
+let run: (Pg.client, selectUsersParams) => promise<Null.t<selectUsersResult>> = (db, params) => {
+  selectUsers(db, params)
+}

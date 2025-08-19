@@ -1,5 +1,8 @@
 import type { SchemaInfo, PostgresSchemaInfo } from './schema-info';
-import { generateTypeScriptContent } from './code-generator';
+import { generateTypeScriptContent, generateTsCodeForMySQL, generateTsDescriptor } from './code-generator';
+import { generateCode as generatePgTsCode } from './code-generator2';
+import { parseSql } from './describe-query';
+import { isLeft } from 'fp-ts/lib/Either';
 import type { BunDialect, D1Dialect, DatabaseClient, LibSqlClient, SQLiteClient, SQLiteDialect, PgDielect, MySqlDialect } from './types';
 import { SQLiteType, type PostgresType } from './sqlite-query-analyzer/types';
 import { TsType, mapper as mapperMySQL, MySqlType } from './mysql-mapping';
@@ -328,49 +331,37 @@ export type GenerateSqlOptions = {
 	schemaInfo: SchemaInfo;
 };
 
-type AnySchemaInfo = SchemaInfo | PostgresSchemaInfo;
-type AnyClient = DatabaseClient;
-
-async function generateReScriptCore(params: {
-	sql: string;
-	queryName: string;
-	isCrudFile?: boolean;
-	databaseClient: AnyClient;
-	schemaInfo: AnySchemaInfo;
-}): Promise<{ rescript: string; originalTs: string }> {
-	const { databaseClient, schemaInfo } = params;
-	const queryName = params.queryName;
-	const isCrudFile = params.isCrudFile ?? false;
-
-	setupMappers();
-
-	const generated = await generateTypeScriptContent({
-		client: databaseClient,
-		queryName,
-		sqlContent: params.sql,
-		schemaInfo,
-		isCrudFile
-	});
-
-	if (generated._tag === 'Left') {
-		throw new Error(generated.left.description);
-	}
-
-	// Remove all `export ` keywords from the generated TS before further processing
-	const tsWithoutExports = generated.right.replace(/\bexport\s+/g, '');
-	const ir = extractRescriptIRFromTypeScript(tsWithoutExports, queryName);
-	const blankedJs = tsBlankSpace(tsWithoutExports);
+function rescriptFromTs(
+	tsContent: string,
+	queryName: string,
+	databaseClient: DatabaseClient['type']
+): { rescript: string; originalTs: string } {
+	const tsCleaned = tsContent.replace(/^\s*import\s+pg\s+from\s+['"]pg['"];?\s*\n?/gm, '').replace(/\bexport\s+/g, '');
+	const ir = extractRescriptIRFromTypeScript(tsCleaned, queryName);
+	const blankedJs = tsBlankSpace(tsCleaned);
 	const formattedJs = dprint.format('generated.js', blankedJs, {
 		lineWidth: 100,
 		semiColons: 'asi',
 		quoteStyle: 'alwaysSingle'
 	});
-	const rescript = printRescript(ir, databaseClient.type, { rawJs: formattedJs });
-	return { rescript, originalTs: generated.right };
+	const rescript = printRescript(ir, databaseClient, { rawJs: formattedJs });
+	return { rescript, originalTs: tsContent };
 }
 
 export async function generateReScriptFromSQLite(params: GenerateSqlOptions): Promise<{ rescript: string; originalTs: string }> {
-	return generateReScriptCore(params);
+	const { databaseClient, schemaInfo, queryName } = params;
+	setupMappers();
+	const generated = await generateTypeScriptContent({
+		client: databaseClient,
+		queryName,
+		sqlContent: params.sql,
+		schemaInfo,
+		isCrudFile: params.isCrudFile ?? false
+	});
+	if (isLeft(generated)) {
+		throw new Error(generated.left.description);
+	}
+	return rescriptFromTs(generated.right, queryName, databaseClient.type);
 }
 
 export type GeneratePostgresOptions = {
@@ -382,7 +373,13 @@ export type GeneratePostgresOptions = {
 };
 
 export async function generateReScriptFromPostgres(params: GeneratePostgresOptions): Promise<{ rescript: string; originalTs: string }> {
-	return generateReScriptCore(params);
+	const { databaseClient, schemaInfo, queryName } = params;
+	setupMappers();
+	const result = await generatePgTsCode(databaseClient, params.sql, queryName, schemaInfo);
+	if (result.isErr()) {
+		throw new Error(result.error.description);
+	}
+	return rescriptFromTs(result.value, queryName, databaseClient.type);
 }
 
 export type GenerateMySQLOptions = {
@@ -394,17 +391,26 @@ export type GenerateMySQLOptions = {
 };
 
 export async function generateReScriptFromMySQL(params: GenerateMySQLOptions): Promise<{ rescript: string; originalTs: string }> {
-	return generateReScriptCore(params);
+	const { databaseClient, queryName } = params;
+	setupMappers();
+	const parsed = await parseSql(databaseClient, params.sql);
+	if (isLeft(parsed)) {
+		throw new Error(parsed.left.description);
+	}
+	const tsDesc = generateTsDescriptor(parsed.right);
+	const tsContent = generateTsCodeForMySQL(tsDesc, queryName, params.isCrudFile ?? false);
+	return rescriptFromTs(tsContent, queryName, databaseClient.type);
 }
 
 export type IRType =
-	| { kind: 'int' | 'float' | 'string' | 'bool' | 'date' | 'bytes' | 'any' }
-	| { kind: 'array'; of: IRType }
-	| { kind: 'union'; of: IRType[] }
-	| { kind: 'tuple'; elements: IRType[] }
-	| { kind: 'object'; fields: IRField[] }
-	| { kind: 'literal'; value: string | number | boolean | null | undefined }
-	| { kind: 'ref'; name: string };
+    | { kind: 'int' | 'float' | 'string' | 'bool' | 'date' | 'bytes' | 'any' }
+    | { kind: 'array'; of: IRType }
+    | { kind: 'promise'; of: IRType }
+    | { kind: 'union'; of: IRType[] }
+    | { kind: 'tuple'; elements: IRType[] }
+    | { kind: 'object'; fields: IRField[] }
+    | { kind: 'literal'; value: string | number | boolean | null | undefined }
+    | { kind: 'ref'; name: string };
 
 export type IRField = { name: string; type: IRType; optional?: boolean };
 
@@ -424,7 +430,8 @@ export type RescriptIR = {
 
 // Public entry: parse TS string and extract a minimal IR for ReScript printing
 export function extractRescriptIRFromTypeScript(tsCode: string, queryName: string): RescriptIR {
-	const source = ts.createSourceFile('generated.ts', tsCode, ts.ScriptTarget.Latest, false, ts.ScriptKind.TS);
+	// Enable parent pointers so getText works reliably on nested nodes
+	const source = ts.createSourceFile('generated.ts', tsCode, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
 	const pascalName = toPascalCase(queryName);
 
 	const types: IRTypeDef[] = [];
@@ -450,7 +457,7 @@ export function extractRescriptIRFromTypeScript(tsCode: string, queryName: strin
 			types.push({ name, role, aliasOf });
 		}
 		// Collect const-based functions
-		const fn = extractFunctionFromStatement(stmt, source);
+		const fn = extractFunctionFromStatement(stmt);
 		if (fn) {
 			functions.push(...(Array.isArray(fn) ? fn : [fn]));
 		}
@@ -462,6 +469,12 @@ export function extractRescriptIRFromTypeScript(tsCode: string, queryName: strin
 	const mainName = hasNested ? nestedCandidate : queryName;
 
 	return { queryName, mainName, pascalName, types, functions };
+}
+
+// Safely get full name for qualified type references like pg.Client
+function getEntityNameText(name: ts.EntityName): string {
+	if (ts.isIdentifier(name)) return name.text;
+	return `${getEntityNameText(name.left)}.${name.right.text}`;
 }
 
 function typeNodeToIR(node: ts.TypeNode): IRType {
@@ -485,10 +498,10 @@ function typeNodeToIR(node: ts.TypeNode): IRType {
 	if (ts.isUnionTypeNode(node)) {
 		return { kind: 'union', of: node.types.map(typeNodeToIR) };
 	}
-	if (ts.isTypeReferenceNode(node)) {
-		const typeName = ts.isIdentifier(node.typeName) ? node.typeName.text : node.typeName.getText();
-		if (typeName === 'Date') return { kind: 'date' };
-		if (typeName === 'Uint8Array' || typeName === 'ArrayBuffer') return { kind: 'bytes' };
+    if (ts.isTypeReferenceNode(node)) {
+        const typeName = ts.isIdentifier(node.typeName) ? node.typeName.text : getEntityNameText(node.typeName);
+        if (typeName === 'Date') return { kind: 'date' };
+        if (typeName === 'Uint8Array' || typeName === 'ArrayBuffer') return { kind: 'bytes' };
 		// Normalize scalar aliases our mapper might emit
 		if (typeName === 'int') return { kind: 'int' };
 		if (typeName === 'float') return { kind: 'float' };
@@ -499,11 +512,14 @@ function typeNodeToIR(node: ts.TypeNode): IRType {
 			return { kind: 'any' };
 		}
 		// Handle generic arrays: Array<T> and array<T>
-		if ((typeName === 'Array' || typeName === 'array') && node.typeArguments && node.typeArguments.length === 1) {
-			return { kind: 'array', of: typeNodeToIR(node.typeArguments[0]!) };
-		}
-		return { kind: 'ref', name: typeName };
-	}
+        if ((typeName === 'Array' || typeName === 'array') && node.typeArguments && node.typeArguments.length === 1) {
+            return { kind: 'array', of: typeNodeToIR(node.typeArguments[0]!) };
+        }
+        if (typeName === 'Promise' && node.typeArguments && node.typeArguments.length === 1) {
+            return { kind: 'promise', of: typeNodeToIR(node.typeArguments[0]!) };
+        }
+        return { kind: 'ref', name: typeName };
+    }
 	if (ts.isLiteralTypeNode(node)) {
 		if (ts.isStringLiteral(node.literal)) return { kind: 'literal', value: node.literal.text };
 		if (node.literal.kind === ts.SyntaxKind.TrueKeyword) return { kind: 'literal', value: true };
@@ -540,7 +556,7 @@ export type IRFunction = {
 	returnType?: IRType;
 };
 
-function extractFunctionFromStatement(stmt: ts.Statement, source: ts.SourceFile): IRFunction | IRFunction[] | undefined {
+function extractFunctionFromStatement(stmt: ts.Statement): IRFunction | IRFunction[] | undefined {
 	if (ts.isFunctionDeclaration(stmt) && stmt.name) {
 		const name = stmt.name.text;
 		const params = (stmt.parameters || []).map(paramToIRParam);
@@ -573,23 +589,26 @@ function paramToIRParam(p: ts.ParameterDeclaration): IRFunctionParam {
 
 // Similar to typeNodeToIR, but preserves references as refs instead of defaulting to 'any'
 function typeNodeToIRRef(node: ts.TypeNode): IRType {
-	if (ts.isTypeReferenceNode(node)) {
-		const typeName = ts.isIdentifier(node.typeName) ? node.typeName.text : node.typeName.getText();
-		if (typeName === 'Date') return { kind: 'date' };
-		if (typeName === 'Uint8Array' || typeName === 'ArrayBuffer') return { kind: 'bytes' };
-		if (typeName === 'int') return { kind: 'int' };
-		if (typeName === 'float') return { kind: 'float' };
-		if (typeName === 'bool') return { kind: 'bool' };
-		if (typeName === 'string') return { kind: 'string' };
-		if (typeName === 'any' || typeName === 'unknown') {
-			return { kind: 'any' };
-		}
-		if ((typeName === 'Array' || typeName === 'array') && node.typeArguments && node.typeArguments.length === 1) {
-			return { kind: 'array', of: typeNodeToIR(node.typeArguments[0]!) };
-		}
+    if (ts.isTypeReferenceNode(node)) {
+        const typeName = ts.isIdentifier(node.typeName) ? node.typeName.text : getEntityNameText(node.typeName);
+        if (typeName === 'Date') return { kind: 'date' };
+        if (typeName === 'Uint8Array' || typeName === 'ArrayBuffer') return { kind: 'bytes' };
+        if (typeName === 'int') return { kind: 'int' };
+        if (typeName === 'float') return { kind: 'float' };
+        if (typeName === 'bool') return { kind: 'bool' };
+        if (typeName === 'string') return { kind: 'string' };
+        if (typeName === 'any' || typeName === 'unknown') {
+            return { kind: 'any' };
+        }
+        if ((typeName === 'Array' || typeName === 'array') && node.typeArguments && node.typeArguments.length === 1) {
+            return { kind: 'array', of: typeNodeToIR(node.typeArguments[0]!) };
+        }
+        if (typeName === 'Promise' && node.typeArguments && node.typeArguments.length === 1) {
+            return { kind: 'promise', of: typeNodeToIR(node.typeArguments[0]!) };
+        }
 
-		return { kind: 'ref', name: typeName };
-	}
+        return { kind: 'ref', name: typeName };
+    }
 	// Preserve tuple structure as-is
 	if (ts.isTupleTypeNode(node)) {
 		return { kind: 'tuple', elements: node.elements.map((el) => typeNodeToIRRef(el)) };
@@ -737,22 +756,24 @@ type PrintCtx = {
 };
 
 function printRsType(t: IRType, clientType: DatabaseClient['type'], ir: RescriptIR, ctx?: PrintCtx): string {
-	switch (t.kind) {
-		case 'int':
-			return 'int';
-		case 'float':
-			return 'float';
-		case 'string':
-			return 'string';
-		case 'bool':
-			return 'bool';
-		case 'date':
-			return 'Date.t';
-		case 'bytes':
-			return clientType === 'better-sqlite3' || clientType === 'bun:sqlite' ? 'Uint8Array.t' : 'ArrayBuffer';
-		case 'any':
-			console.warn("Printing IR 'any' as ReScript 'unknown'");
-			return 'unknown';
+		switch (t.kind) {
+			case 'int':
+				return 'int';
+			case 'float':
+				return 'float';
+			case 'string':
+				return 'string';
+			case 'bool':
+				return 'bool';
+			case 'date':
+				return 'Date.t';
+			case 'bytes':
+				return clientType === 'better-sqlite3' || clientType === 'bun:sqlite' ? 'Uint8Array.t' : 'ArrayBuffer';
+			case 'any':
+				console.warn("Printing IR 'any' as ReScript 'unknown'");
+				return 'unknown';
+			case 'promise':
+				return `promise<${printRsType(t.of, clientType, ir, ctx)}>`;
 		case 'ref':
 			if (t.name === 'Database') return mapDatabaseRef(clientType);
 			return lowerFirst(t.name);
@@ -808,6 +829,17 @@ function printRsType(t: IRType, clientType: DatabaseClient['type'], ir: Rescript
 				const ctors = nonNil.map((tu) => renderTupleAsVariantCtor(tu as Extract<IRType, { kind: 'tuple' }>, clientType, ir));
 				const unique = Array.from(new Set(ctors));
 				return '\n' + '| ' + unique.join('\n| ');
+			}
+
+			// Special-case: Postgres client union (pg.Client | pg.Pool | pg.PoolClient)
+			const isAllRefs = nonNil.length > 0 && nonNil.every((x) => x.kind === 'ref');
+			if (clientType === 'pg' && isAllRefs) {
+				const valid = new Set(['pg.Client', 'pg.Pool', 'pg.PoolClient']);
+				const names = new Set(nonNil.map((x) => (x as Extract<IRType, { kind: 'ref' }>).name));
+				const allValid = Array.from(names).every((n) => valid.has(n));
+				if (allValid) {
+					return wrap('Pg.client');
+				}
 			}
 
 			// Unsupported TS-style multi-type unions: print as unknown with refined inline comment
@@ -919,6 +951,8 @@ function formatUnionMemberForComment(t: IRType, clientType: DatabaseClient['type
 			return clientType === 'better-sqlite3' || clientType === 'bun:sqlite' ? 'Uint8Array' : 'ArrayBuffer';
 		case 'any':
 			return 'any';
+		case 'promise':
+			return `promise<${formatUnionMemberForComment(t.of, clientType, ir)}>`;
 		case 'ref': {
 			if (t.name === 'Database') return 'Database';
 			return lowerFirst(t.name);
