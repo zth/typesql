@@ -4,6 +4,8 @@ import { createSqliteClient, loadDbSchema } from '../../src/sqlite-query-analyze
 import type { SchemaInfo } from '../../src/schema-info';
 import fs from 'node:fs';
 
+const WRITE_FILES = false;
+
 describe('api: generateReScriptFromSql (SQLite)', () => {
 	it('generates code for a simple select', async () => {
 		const clientResult = createSqliteClient('better-sqlite3', ':memory:', [], []);
@@ -42,7 +44,7 @@ describe('api: generateReScriptFromSql (SQLite)', () => {
 		const sql = `select *, true as bool_expr, date('now') as date_expr, datetime('now') as datetime_expr from users where id in (case when :ids is not null then :ids else null end) and name in (:names) and score in (:scores) and balance in (:balances)`;
 
 		const queryName = 'selectUsers';
-		const { rescript, originalTs: _ } = await generateReScriptFromSql({
+		const { rescript, originalTs } = await generateReScriptFromSql({
 			sql,
 			queryName,
 			isCrudFile: false,
@@ -50,8 +52,10 @@ describe('api: generateReScriptFromSql (SQLite)', () => {
 			schemaInfo
 		});
 
-		// fs.writeFileSync('sqlite-generate-rescript.select-users.rescript.txt', rescript);
-		// fs.writeFileSync('sqlite-generate-rescript.select-users.ts.txt', originalTs);
+		if (WRITE_FILES) {
+			fs.writeFileSync('sqlite-generate-rescript.select-users.rescript.txt', rescript);
+			fs.writeFileSync('sqlite-generate-rescript.select-users.ts.txt', originalTs);
+		}
 
 		assert.deepEqual(rescript, fs.readFileSync('sqlite-generate-rescript.select-users.rescript.txt', 'utf8'));
 	});
@@ -107,8 +111,10 @@ describe('api: generateReScriptFromSql (SQLite)', () => {
 			schemaInfo
 		});
 
-		fs.writeFileSync('sqlite-generate-rescript.select-user-posts-nested.rescript.txt', rescript);
-		fs.writeFileSync('sqlite-generate-rescript.select-user-posts-nested.ts.txt', originalTs);
+		if (WRITE_FILES) {
+			fs.writeFileSync('sqlite-generate-rescript.select-user-posts-nested.rescript.txt', rescript);
+			fs.writeFileSync('sqlite-generate-rescript.select-user-posts-nested.ts.txt', originalTs);
+		}
 
 		assert.deepEqual(rescript, fs.readFileSync('sqlite-generate-rescript.select-user-posts-nested.rescript.txt', 'utf8'));
 	});
@@ -159,8 +165,10 @@ AND m2.descr = :description`;
 			schemaInfo
 		});
 
-		fs.writeFileSync('sqlite-generate-rescript.dynamic-query01.rescript.txt', rescript);
-		fs.writeFileSync('sqlite-generate-rescript.dynamic-query01.ts.txt', originalTs);
+		if (WRITE_FILES) {
+			fs.writeFileSync('sqlite-generate-rescript.dynamic-query01.rescript.txt', rescript);
+			fs.writeFileSync('sqlite-generate-rescript.dynamic-query01.ts.txt', originalTs);
+		}
 
 		assert.deepEqual(rescript, fs.readFileSync('sqlite-generate-rescript.dynamic-query01.rescript.txt', 'utf8'));
 	});

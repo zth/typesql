@@ -1,3 +1,38 @@
+%%raw("function selectUsers(db, params) {
+  const sql = `
+	select *, true as bool_expr, date('now') as date_expr, datetime('now') as datetime_expr from users where id in (case when ? is not null then ? else null end) and name in (${
+    params.names.map(() => '?')
+  }) and score in (${params.scores.map(() => '?')}) and balance in (${
+    params.balances.map(() => '?')
+  })
+	`
+  return db.prepare(sql)
+    .raw(true)
+    .all([params.ids, params.ids, ...params.names, ...params.scores, ...params.balances])
+    .map((data) => mapArrayToSelectUsersResult(data))
+}
+
+function mapArrayToSelectUsersResult(data) {
+  const result = {
+    id: data[0],
+    name: data[1],
+    created_at: data[2],
+    age: data[3],
+    score: data[4],
+    balance: data[5],
+    is_active: data[6],
+    blob_col: data[7],
+    date_col: data[8],
+    date_time_col: data[9],
+    enum_col: data[10],
+    bool_expr: data[11],
+    date_expr: data[12] != null ? new Date(data[12]) : data[12],
+    datetime_expr: data[13] != null ? new Date(data[13]) : data[13],
+  }
+  return result
+}
+")
+
 @@warning("-30")
 type rec selectUsersParams = {
 	ids: Null.t<int>,
@@ -22,32 +57,5 @@ and selectUsersResult = {
 	datetime_expr: option<Date.t>
 }
 
-%%raw("function mapArrayToSelectUsersResult(data) {
-    const result = {
-        id: data[0],
-        name: data[1],
-        created_at: data[2],
-        age: data[3],
-        score: data[4],
-        balance: data[5],
-        is_active: data[6],
-        blob_col: data[7],
-        date_col: data[8],
-        date_time_col: data[9],
-        enum_col: data[10],
-        bool_expr: data[11],
-        date_expr: data[12] != null ? new Date(data[12]) : data[12],
-        datetime_expr: data[13] != null ? new Date(data[13]) : data[13]
-    };
-    return result;
-}")
-
-let run: (BetterSqlite3.client, selectUsersParams) => array<selectUsersResult> = %raw("(function selectUsers(db, params) {
-    const sql = `
-	select *, true as bool_expr, date('now') as date_expr, datetime('now') as datetime_expr from users where id in (case when ? is not null then ? else null end) and name in (${params.names.map(() => '?')}) and score in (${params.scores.map(() => '?')}) and balance in (${params.balances.map(() => '?')})
-	`;
-    return db.prepare(sql)
-        .raw(true)
-        .all([params.ids, params.ids, ...params.names, ...params.scores, ...params.balances])
-        .map(data => mapArrayToSelectUsersResult(data));
-})")
+external selectUsers: (BetterSqlite3.client, selectUsersParams) => array<selectUsersResult> = "selectUsers"
+let run = selectUsers

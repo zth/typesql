@@ -5,18 +5,8 @@ import { SQLiteType } from './sqlite-query-analyzer/types';
 import { TsType } from './mysql-mapping';
 import { mapper as mapperSqlite } from './drivers/sqlite';
 import ts from 'typescript';
-
-// Lightweight logging so callers can see lossy mappings.
-// We log whenever a TS construct maps to IR 'any' or prints as ReScript 'unknown',
-// and when a TS-style union remains after our transforms.
-function logWarn(message: string) {
-	try {
-		// Prefer warn to avoid breaking stdout-based comparisons
-		console.warn(`[rescript-gen] ${message}`);
-	} catch {
-		// noop in environments without console
-	}
-}
+import tsBlankSpace from 'ts-blank-space';
+import dprint from 'dprint-node';
 
 const mapSqlite: (sqliteType: SQLiteType, client: SQLiteClient) => string = (sqliteType, client) => {
 	switch (sqliteType) {
@@ -50,7 +40,7 @@ const mapSqlite: (sqliteType: SQLiteType, client: SQLiteClient) => string = (sql
 		// Emit a TS string-literal union so it becomes polymorphic variants in ReScript
 		return enumValues.split(',').join(' | ');
 	}
-	logWarn(`SQLite type '${sqliteType}' not explicitly mapped -> defaulting to 'any'`);
+	console.warn(`SQLite type '${sqliteType}' not explicitly mapped -> defaulting to 'any'`);
 	return 'any';
 };
 
@@ -88,9 +78,16 @@ export async function generateReScriptFromSql(params: GenerateSqlApiParams): Pro
 		throw new Error(generated.left.description);
 	}
 
-	const ir = extractRescriptIRFromTypeScript(generated.right, queryName);
-	const includeEolImport = hasOsEolImport(generated.right);
-	const rescript = printRescript(ir, databaseClient.type, { includeEolImport });
+	// Remove all `export ` keywords from the generated TS before further processing
+	const tsWithoutExports = generated.right.replace(/\bexport\s+/g, '');
+	const ir = extractRescriptIRFromTypeScript(tsWithoutExports, queryName);
+	const blankedJs = tsBlankSpace(tsWithoutExports);
+	const formattedJs = dprint.format('generated.js', blankedJs, {
+		lineWidth: 100,
+		semiColons: 'asi',
+		quoteStyle: 'alwaysSingle'
+	});
+	const rescript = printRescript(ir, databaseClient.type, { rawJs: formattedJs });
 	// Keep original TS for callers; expansion is only for internal processing
 	return { rescript, originalTs: generated.right };
 }
@@ -116,7 +113,6 @@ export type RescriptIR = {
 	mainName: string; // function to expose as run (may be `${queryName}Nested`)
 	pascalName: string; // e.g. SelectUsers
 	types: IRTypeDef[]; // Extracted types we care about
-	consts: string[]; // JS bodies for const declarations to emit via %%raw
 	functions: IRFunction[]; // Functions with signatures and optional JS bodies
 };
 
@@ -126,7 +122,6 @@ export function extractRescriptIRFromTypeScript(tsCode: string, queryName: strin
 	const pascalName = toPascalCase(queryName);
 
 	const types: IRTypeDef[] = [];
-	const consts: string[] = [];
 	const functions: IRFunction[] = [];
 
 	for (const stmt of source.statements) {
@@ -152,13 +147,6 @@ export function extractRescriptIRFromTypeScript(tsCode: string, queryName: strin
 		const fn = extractFunctionFromStatement(stmt, source);
 		if (fn) {
 			functions.push(...(Array.isArray(fn) ? fn : [fn]));
-		} else if (ts.isVariableStatement(stmt)) {
-			// If it's a const declaration (not let/var) and not a function, emit as raw const
-			const isConst = (stmt.declarationList.flags & ts.NodeFlags.Const) === ts.NodeFlags.Const;
-			if (isConst) {
-				const jsBody = sanitizeJsBody(tryTranspileToJs(stmt.getText(source)));
-				if (jsBody) consts.push(jsBody);
-			}
 		}
 	}
 
@@ -167,7 +155,7 @@ export function extractRescriptIRFromTypeScript(tsCode: string, queryName: strin
 	const hasNested = functions.some((f) => f.name === nestedCandidate);
 	const mainName = hasNested ? nestedCandidate : queryName;
 
-	return { queryName, mainName, pascalName, types, consts, functions };
+	return { queryName, mainName, pascalName, types, functions };
 }
 
 function typeNodeToIR(node: ts.TypeNode): IRType {
@@ -196,7 +184,7 @@ function typeNodeToIR(node: ts.TypeNode): IRType {
 		if (typeName === 'bool') return { kind: 'bool' };
 		if (typeName === 'string') return { kind: 'string' };
 		if (typeName === 'any' || typeName === 'unknown') {
-			logWarn(`Encountered type reference '${typeName}' -> mapping to IR 'any' (${node.getText()})`);
+			console.warn(`Encountered type reference '${typeName}' -> mapping to IR 'any' (${node.getText()})`);
 			return { kind: 'any' };
 		}
 		// Handle generic arrays: Array<T> and array<T>
@@ -237,26 +225,19 @@ function toPascalCase(name: string): string {
 export type IRFunctionParam = { name: string; type?: IRType; optional?: boolean };
 export type IRFunction = {
 	name: string;
-	isExported: boolean;
 	params: IRFunctionParam[];
 	returnType?: IRType;
-	jsBody?: string; // If successfully stripped of types
 };
 
 function extractFunctionFromStatement(stmt: ts.Statement, source: ts.SourceFile): IRFunction | IRFunction[] | undefined {
 	if (ts.isFunctionDeclaration(stmt) && stmt.name) {
 		const name = stmt.name.text;
-		const isExported = hasExportModifier(stmt.modifiers);
 		const params = (stmt.parameters || []).map(paramToIRParam);
 		const returnType = stmt.type ? typeNodeToIRRef(stmt.type) : undefined;
-		const jsBody = sanitizeJsBody(tryTranspileToJs(stmt.getText(source)));
-		return { name, isExported, params, returnType, jsBody };
+		return { name, params, returnType };
 	}
 	if (ts.isVariableStatement(stmt)) {
-		const isExported = hasExportModifier(stmt.modifiers);
 		const out: IRFunction[] = [];
-		// Transpile the entire statement once and reuse for each discovered function
-		const transpiledOnce = sanitizeJsBody(tryTranspileToJs(stmt.getText(source)));
 		for (const decl of stmt.declarationList.declarations) {
 			if (!ts.isIdentifier(decl.name)) continue;
 			const name = decl.name.text;
@@ -264,17 +245,12 @@ function extractFunctionFromStatement(stmt: ts.Statement, source: ts.SourceFile)
 			if (init && (ts.isFunctionExpression(init) || ts.isArrowFunction(init))) {
 				const params = (init.parameters || []).map(paramToIRParam);
 				const returnType = init.type ? typeNodeToIRRef(init.type) : undefined;
-				const jsBody = transpiledOnce;
-				out.push({ name, isExported, params, returnType, jsBody });
+				out.push({ name, params, returnType });
 			}
 		}
 		if (out.length > 0) return out;
 	}
 	return undefined;
-}
-
-function hasExportModifier(mods: ts.NodeArray<ts.ModifierLike> | undefined): boolean {
-	return (mods ?? []).some((m) => m.kind === ts.SyntaxKind.ExportKeyword);
 }
 
 function paramToIRParam(p: ts.ParameterDeclaration): IRFunctionParam {
@@ -306,59 +282,20 @@ function typeNodeToIRRef(node: ts.TypeNode): IRType {
 	return typeNodeToIR(node);
 }
 
-// Transpile a TS snippet (e.g., a single function declaration) to JS with types erased
-function tryTranspileToJs(tsSnippet: string): string | undefined {
-	try {
-		const out = ts.transpileModule(tsSnippet, {
-			compilerOptions: {
-				target: ts.ScriptTarget.ESNext,
-				module: ts.ModuleKind.ESNext,
-				removeComments: true,
-				importsNotUsedAsValues: ts.ImportsNotUsedAsValues.Remove
-			}
-		});
-		return out.outputText.trim();
-	} catch {
-		return undefined;
-	}
-}
-
-function sanitizeJsBody(jsBody: string | undefined): string | undefined {
-	if (!jsBody) return jsBody;
-	// Remove a single leading 'export' or 'export default' but preserve formatting
-	const code = jsBody.replace(/^\s*export\s+(?:default\s+)?/, '');
-	return code;
-}
-
-function statementToExpression(jsStatement: string): string {
-	const code = jsStatement;
-	if (/^\s*function\s+\w+\s*\(/.test(code)) {
-		// Turn declaration into function expression, preserve formatting
-		return '(' + code + ')';
-	}
-	const varMatch = /^\s*(?:const|let|var)\s+\w+\s*=\s*([\s\S]+?);?\s*$/.exec(code);
-	if (varMatch) {
-		const rhs = varMatch[1];
-		return rhs;
-	}
-	return code;
-}
-
 function encodeRawString(s: string): string {
 	return s.replace(/\\/g, '\\\\').replace(/\"/g, '\\"');
 }
 
 // ReScript printer and helpers
-export function printRescript(ir: RescriptIR, clientType: DatabaseClient['type'], opts?: { includeEolImport?: boolean }): string {
+export function printRescript(ir: RescriptIR, clientType: DatabaseClient['type'], opts?: { rawJs?: string }): string {
 	const lines: string[] = [];
-	const emittedRaw = new Set<string>();
 
-	// Optional raw import for EOL if present in TS
-	if (opts?.includeEolImport) {
-		lines.push("%%raw(`import { EOL } from 'os';`)");
+	// Emit the entire JS (with types erased) as a single raw block
+	if (opts?.rawJs && opts.rawJs.trim().length > 0) {
+		const encoded = encodeRawString(opts.rawJs);
+		lines.push(`%%raw("${encoded}")`);
 		lines.push('');
 	}
-
 	// Emit all types in declaration order as a recursive chain: type rec ... and ...
 	const allTypes = ir.types;
 	if (allTypes.length > 0) {
@@ -378,51 +315,18 @@ export function printRescript(ir: RescriptIR, clientType: DatabaseClient['type']
 		lines.push('');
 	}
 
-	// Emit consts after types, before functions
-	if (ir.consts.length > 0) {
-		for (const js of ir.consts) {
-			const encoded = encodeRawString(js);
-			if (!emittedRaw.has(encoded)) {
-				lines.push(`%%raw("${encoded}")`);
-				emittedRaw.add(encoded);
-				lines.push('');
-			}
-		}
-	}
-
-	// Emit helper functions first, then main query function last (single-pass partition)
-	const helperFns: IRFunction[] = [];
-	const mainFns: IRFunction[] = [];
-	for (const f of ir.functions) {
-		(f.name === ir.mainName ? mainFns : helperFns).push(f);
-	}
-	for (const fn of [...helperFns, ...mainFns]) {
-		const isMain = fn.name === ir.mainName;
-		const jsStmt = fn.jsBody || '';
-		if (isMain) {
-			const paramsTypes = fn.params.map((p) => printFnParamType(p.type, clientType, ir)).filter(Boolean) as string[];
-			const paramsStr = paramsTypes.length > 0 ? `(${paramsTypes.join(', ')})` : 'unit';
-			const returnType = printFnParamType(fn.returnType, clientType, ir) || 'unit';
-			const signature = `${paramsStr} => ${returnType}`;
-			const expr = statementToExpression(jsStmt);
-			const js = encodeRawString(expr);
-			lines.push(`let run: ${signature} = %raw("${js}")`);
-			lines.push('');
-		} else {
-			const js = encodeRawString(jsStmt);
-			if (!emittedRaw.has(js)) {
-				lines.push(`%%raw("${js}")`);
-				emittedRaw.add(js);
-				lines.push('');
-			}
-		}
+	const mainFn = ir.functions.find((f) => f.name === ir.mainName) || ir.functions[0];
+	if (mainFn) {
+		const paramsTypes = mainFn.params.map((p) => printFnParamType(p.type, clientType, ir)).filter(Boolean) as string[];
+		const paramsStr = paramsTypes.length > 0 ? `(${paramsTypes.join(', ')})` : 'unit';
+		const returnType = printFnParamType(mainFn.returnType, clientType, ir) || 'unit';
+		const signature = `${paramsStr} => ${returnType}`;
+		lines.push(`external ${ir.mainName}: ${signature} = "${ir.mainName}"`);
+		lines.push(`let run = ${ir.mainName}`);
+		lines.push('');
 	}
 
 	return lines.join('\n');
-}
-
-function hasOsEolImport(tsCode: string): boolean {
-	return tsCode.includes("import { EOL } from 'os'");
 }
 
 function printFnParamType(t: IRType | undefined, clientType: DatabaseClient['type'], ir: RescriptIR): string | undefined {
@@ -451,7 +355,7 @@ function printRsType(t: IRType, clientType: DatabaseClient['type'], ir: Rescript
 		case 'bytes':
 			return clientType === 'better-sqlite3' || clientType === 'bun:sqlite' ? 'Uint8Array.t' : 'ArrayBuffer';
 		case 'any':
-			logWarn("Printing IR 'any' as ReScript 'unknown'");
+			console.warn("Printing IR 'any' as ReScript 'unknown'");
 			return 'unknown';
 		case 'ref':
 			if (t.name === 'Database') return mapDatabaseRef(clientType);
@@ -463,7 +367,7 @@ function printRsType(t: IRType, clientType: DatabaseClient['type'], ir: Rescript
 			}
 			if (typeof t.value === 'number') return 'float';
 			if (typeof t.value === 'boolean') return 'bool';
-			logWarn(`Literal '${String(t.value)}' maps to ReScript 'unknown'`);
+			console.warn(`Literal '${String(t.value)}' maps to ReScript 'unknown'`);
 			return 'unknown';
 		}
 		case 'array':
@@ -507,7 +411,7 @@ function printRsType(t: IRType, clientType: DatabaseClient['type'], ir: Rescript
 			if (hasNull) renderedSet.add('null');
 			if (hasUndefined) renderedSet.add('undefined');
 			const rendered = Array.from(renderedSet).join(' | ');
-			logWarn(`Unsupported TS-style union remains after transform -> printing as 'unknown /* ${rendered} */'.`);
+			console.warn(`Unsupported TS-style union remains after transform -> printing as 'unknown /* ${rendered} */'.`);
 			return `unknown /* ${rendered} */`;
 		}
 		case 'object': {
