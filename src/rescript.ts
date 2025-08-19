@@ -314,12 +314,18 @@ export function printRescript(ir: RescriptIR, clientType: DatabaseClient['type']
 		}
 		const first = allTypes[0]!;
 		const firstName = lowerFirst(first.name);
-		const firstCtx = { currentAliasName: first.name, paramsTopLevel: first.role === 'Params' ? true : undefined } as const;
+		const firstCtx = {
+			currentAliasName: first.name,
+			paramsTopLevel: first.role === 'Params' || first.name.endsWith('Select') ? true : undefined
+		} as const;
 		lines.push(`type rec ${firstName} = ${printRsType(first.aliasOf, clientType, ir, firstCtx)}`);
 		for (let i = 1; i < allTypes.length; i++) {
 			const t = allTypes[i]!;
 			const name = lowerFirst(t.name);
-			const ctx = { currentAliasName: t.name, paramsTopLevel: t.role === 'Params' ? true : undefined } as const;
+			const ctx = {
+				currentAliasName: t.name,
+				paramsTopLevel: t.role === 'Params' || t.name.endsWith('Select') ? true : undefined
+			} as const;
 			lines.push(`and ${name} = ${printRsType(t.aliasOf, clientType, ir, ctx)}`);
 		}
 		lines.push('');

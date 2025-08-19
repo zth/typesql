@@ -139,10 +139,10 @@ and dynamicQuery01Result = {
   description: option<string>
 }
 and dynamicQuery01Select = {
-  id: option<bool>,
-  value: option<bool>,
-  name: option<bool>,
-  description: option<bool>
+  id?: bool,
+  value?: bool,
+  name?: bool,
+  description?: bool
 }
 and numericOperator = [#"=" | #"<>" | #">" | #"<" | #">=" | #"<="]
 and stringOperator = [#"=" | #"<>" | #">" | #"<" | #">=" | #"<=" | #"LIKE"]
