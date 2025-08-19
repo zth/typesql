@@ -1,10 +1,10 @@
 import assert from 'node:assert';
-import { generateReScriptFromSql } from '../../src/rescript';
+import { generateReScriptFromSQLite } from '../../src/rescript';
 import { createSqliteClient, loadDbSchema } from '../../src/sqlite-query-analyzer/query-executor';
 import type { SchemaInfo } from '../../src/schema-info';
 import fs from 'node:fs';
 
-const WRITE_FILES = true;
+const WRITE_FILES = false;
 
 describe('api: generateReScriptFromSql (SQLite)', () => {
 	it('generates code for a simple select', async () => {
@@ -44,7 +44,7 @@ describe('api: generateReScriptFromSql (SQLite)', () => {
 		const sql = `select *, true as bool_expr, date('now') as date_expr, datetime('now') as datetime_expr from users where id in (case when :ids is not null then :ids else null end) and name in (:names) and score in (:scores) and balance in (:balances)`;
 
 		const queryName = 'selectUsers';
-		const { rescript, originalTs } = await generateReScriptFromSql({
+		const { rescript, originalTs } = await generateReScriptFromSQLite({
 			sql,
 			queryName,
 			isCrudFile: false,
@@ -103,7 +103,7 @@ describe('api: generateReScriptFromSql (SQLite)', () => {
 		INNER JOIN posts on posts.fk_user = users.id`;
 
 		const queryName = 'selectUserPosts';
-		const { rescript, originalTs } = await generateReScriptFromSql({
+		const { rescript, originalTs } = await generateReScriptFromSQLite({
 			sql,
 			queryName,
 			isCrudFile: false,
@@ -157,7 +157,7 @@ WHERE m2.name = :name
 AND m2.descr = :description`;
 
 		const queryName = 'dynamicQuery01';
-		const { rescript, originalTs } = await generateReScriptFromSql({
+		const { rescript, originalTs } = await generateReScriptFromSQLite({
 			sql,
 			queryName,
 			isCrudFile: false,

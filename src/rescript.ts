@@ -1,9 +1,10 @@
 import type { SchemaInfo, PostgresSchemaInfo } from './schema-info';
 import { generateTypeScriptContent } from './code-generator';
-import type { DatabaseClient, SQLiteClient } from './types';
-import { SQLiteType } from './sqlite-query-analyzer/types';
-import { TsType } from './mysql-mapping';
+import type { BunDialect, D1Dialect, DatabaseClient, LibSqlClient, SQLiteClient, SQLiteDialect, PgDielect, MySqlDialect } from './types';
+import { SQLiteType, type PostgresType } from './sqlite-query-analyzer/types';
+import { TsType, mapper as mapperMySQL, MySqlType } from './mysql-mapping';
 import { mapper as mapperSqlite } from './drivers/sqlite';
+import { mapper as mapperPostgres } from './dialects/postgres';
 import ts from 'typescript';
 import tsBlankSpace from 'ts-blank-space';
 import dprint from 'dprint-node';
@@ -46,25 +47,302 @@ const mapSqlite: (sqliteType: SQLiteType, client: SQLiteClient) => string = (sql
 
 function setupMappers() {
 	mapperSqlite.mapColumnType = (sqliteType, client) => mapSqlite(sqliteType, client) as TsType;
+	mapperMySQL.converToTsType = (t: MySqlType | 'any') => mapMySQL(t) as TsType;
+	mapperPostgres.mapColumnType = (t: PostgresType, json?: boolean) => mapPostgres(t, json) as TsType;
 }
+
+const mapMySQL = (mySqlType: MySqlType | 'any'): string => {
+	// Favor ReScript-friendly scalars: int, float, bool
+	switch (mySqlType) {
+		case 'tinyint':
+		case 'smallint':
+		case 'int':
+		case 'mediumint':
+		case 'bigint':
+		case 'year':
+			return 'int';
+		case 'tinyint[]':
+		case 'smallint[]':
+		case 'int[]':
+		case 'mediumint[]':
+		case 'bigint[]':
+		case 'year[]':
+			return 'int[]';
+		case 'float':
+		case 'double':
+			return 'float';
+		case 'float[]':
+		case 'double[]':
+			return 'float[]';
+		case 'decimal':
+			return 'string';
+		case 'decimal[]':
+			return 'string[]';
+		case 'varchar':
+		case 'varbinary':
+		case 'geometry':
+		case 'tinytext':
+		case 'mediumtext':
+		case 'longtext':
+		case 'text':
+		case 'binary':
+		case 'char':
+			return 'string';
+		case 'varchar[]':
+		case 'char[]':
+			return 'string[]';
+		case 'timestamp':
+		case 'timestamp2':
+		case 'date':
+		case 'newdate':
+		case 'datetime':
+		case 'datetime2':
+		case 'time':
+		case 'time2':
+			return 'Date';
+		case 'bit':
+			return 'bool';
+		case 'bit[]':
+			return 'bool[]';
+		case 'json':
+			return 'Object';
+		case 'tinyblob':
+		case 'mediumblob':
+		case 'longblob':
+		case 'blob':
+			return 'Uint8Array';
+		case 'set':
+			return 'any';
+		default: {
+			if (typeof mySqlType === 'string' && mySqlType.startsWith('enum(')) {
+				const enumValues = mySqlType.substring(mySqlType.indexOf('(') + 1, mySqlType.indexOf(')'));
+				return enumValues.split(',').join(' | ');
+			}
+			return 'any';
+		}
+	}
+};
+
+const mapPostgres: (postgresType: PostgresType, json?: boolean) => string = (postgresType, json = false) => {
+	if (typeof postgresType === 'object') {
+		return 'any';
+	}
+	if (postgresType.startsWith('enum(')) {
+		const enumValues = postgresType.substring(postgresType.indexOf('(') + 1, postgresType.indexOf(')'));
+		return enumValues.split(',').join(' | ');
+	}
+	switch (postgresType) {
+		case 'bool':
+			return 'bool';
+		case '_bool':
+		case 'bool[]':
+			return 'bool[]';
+		case 'int2':
+		case 'int4':
+			return 'int';
+		case '_int2':
+		case 'int2[]':
+		case '_int4':
+		case 'int4[]':
+			return 'int[]';
+		case 'float4':
+		case 'float8':
+			return 'float';
+		case '_float4':
+		case 'float4[]':
+		case '_float8':
+		case 'float8[]':
+			return 'float[]';
+		case 'bytea':
+			return json ? 'string' : 'ArrayBuffer';
+		case '_bytea':
+		case 'bytea[]':
+			return json ? 'string[]' : 'ArrayBuffer[]';
+		case 'char':
+		case 'bpchar':
+		case 'name':
+		case 'text':
+		case 'varchar':
+		case 'uuid':
+		case 'varbit':
+		case 'interval':
+		case 'time':
+		case 'timetz':
+		case 'tsvector':
+		case 'tsquery':
+		case 'jsonpath':
+		case 'vector':
+		case 'regproc':
+		case 'oid':
+		case 'tid':
+		case 'xid':
+		case 'cid':
+		case 'oidvector':
+		case 'xml':
+		case 'point':
+		case 'lseg':
+		case 'path':
+		case 'box':
+		case 'polygon':
+		case 'line':
+		case 'cidr':
+		case 'circle':
+		case 'macaddr8':
+		case 'money':
+		case 'macaddr':
+		case 'inet':
+		case 'int4range':
+		case 'int8range':
+		case 'daterange':
+		case 'numrange':
+		case 'tsrange':
+		case 'tstzrange':
+		case 'aclitem':
+		case 'cstring':
+		case 'pg_node_tree':
+			return 'string';
+		case '_char':
+		case 'char[]':
+		case '_bpchar':
+		case 'bpchar[]':
+		case '_name':
+		case 'name[]':
+		case '_text':
+		case 'text[]':
+		case '_varchar':
+		case 'varchar[]':
+		case '_uuid':
+		case 'uuid[]':
+		case '_varbit':
+		case 'varbit[]':
+		case '_interval':
+		case 'interval[]':
+		case '_time':
+		case 'time[]':
+		case '_timetz':
+		case 'timetz[]':
+		case '_tsvector':
+		case 'tsvector[]':
+		case '_tsquery':
+		case 'tsquery[]':
+		case '_jsonpath':
+		case 'jsonpath[]':
+		case '_vector':
+		case 'vector[]':
+		case '_regproc':
+		case 'regproc[]':
+		case '_oid':
+		case 'oid[]':
+		case '_tid':
+		case 'tid[]':
+		case '_xid':
+		case 'xid[]':
+		case '_cid':
+		case 'cid[]':
+		case '_oidvector':
+		case 'oidvector[]':
+		case '_xml':
+		case 'xml[]':
+		case '_point':
+		case 'point[]':
+		case '_lseg':
+		case 'lseg[]':
+		case '_path':
+		case 'path[]':
+		case '_box':
+		case 'box[]':
+		case '_polygon':
+		case 'polygon[]':
+		case '_line':
+		case 'line[]':
+		case '_cidr':
+		case 'cidr[]':
+		case '_circle':
+		case 'circle[]':
+		case '_macaddr8':
+		case 'macaddr8[]':
+		case '_money':
+		case 'money[]':
+		case '_macaddr':
+		case 'macaddr[]':
+		case '_inet':
+		case 'inet[]':
+		case '_int4range':
+		case 'int4range[]':
+		case '_int8range':
+		case 'int8range[]':
+		case '_numrange':
+		case 'numrange[]':
+		case '_daterange':
+		case 'daterange[]':
+		case '_tsrange':
+		case 'tsrange[]':
+		case '_tstzrange':
+		case 'tstzrange[]':
+		case '_aclitem':
+		case 'aclitem[]':
+		case '_cstring':
+		case 'cstring[]':
+		case 'anyarray[]':
+		case 'pg_node_tree[]':
+			return 'string[]';
+		case 'date':
+		case 'timestamp':
+		case 'timestamptz':
+			return json ? 'string' : 'Date';
+		case '_date':
+		case 'date[]':
+		case '_timestamp':
+		case 'timestamp[]':
+		case '_timestamptz':
+		case 'timestamptz[]':
+			return json ? 'string[]' : 'Date[]';
+		case 'json':
+		case 'jsonb':
+			return 'any';
+		case '_json':
+		case 'json[]':
+		case '_jsonb':
+		case 'jsonb[]':
+			return 'any[]';
+		case 'int8':
+			return 'string';
+		case '_int8':
+		case 'int8[]':
+			return 'string[]';
+		case 'unknown':
+		case 'null':
+			return 'any';
+	}
+	return 'any';
+};
 
 // Type aliases we should not emit into ReScript output
 const TYPE_ALIAS_IGNORE = new Set<string>(['WhereConditionResult']);
 
-export type GenerateSqlApiParams = {
+export type GenerateSqlOptions = {
 	sql: string;
-	queryName?: string;
+	queryName: string;
 	isCrudFile?: boolean;
-	databaseClient: DatabaseClient;
-	schemaInfo: SchemaInfo | PostgresSchemaInfo;
+	databaseClient: SQLiteDialect | LibSqlClient | BunDialect | D1Dialect;
+	schemaInfo: SchemaInfo;
 };
 
-export async function generateReScriptFromSql(params: GenerateSqlApiParams): Promise<{ rescript: string; originalTs: string }> {
-	// Ensure TS generator maps SQLite types to ReScript-friendly names (int, float, bool)
-	setupMappers();
+type AnySchemaInfo = SchemaInfo | PostgresSchemaInfo;
+type AnyClient = DatabaseClient;
+
+async function generateReScriptCore(params: {
+	sql: string;
+	queryName: string;
+	isCrudFile?: boolean;
+	databaseClient: AnyClient;
+	schemaInfo: AnySchemaInfo;
+}): Promise<{ rescript: string; originalTs: string }> {
 	const { databaseClient, schemaInfo } = params;
-	const queryName = params.queryName ?? 'query';
+	const queryName = params.queryName;
 	const isCrudFile = params.isCrudFile ?? false;
+
+	setupMappers();
 
 	const generated = await generateTypeScriptContent({
 		client: databaseClient,
@@ -88,8 +366,35 @@ export async function generateReScriptFromSql(params: GenerateSqlApiParams): Pro
 		quoteStyle: 'alwaysSingle'
 	});
 	const rescript = printRescript(ir, databaseClient.type, { rawJs: formattedJs });
-	// Keep original TS for callers; expansion is only for internal processing
 	return { rescript, originalTs: generated.right };
+}
+
+export async function generateReScriptFromSQLite(params: GenerateSqlOptions): Promise<{ rescript: string; originalTs: string }> {
+	return generateReScriptCore(params);
+}
+
+export type GeneratePostgresOptions = {
+	sql: string;
+	queryName: string;
+	isCrudFile?: boolean;
+	databaseClient: PgDielect;
+	schemaInfo: PostgresSchemaInfo;
+};
+
+export async function generateReScriptFromPostgres(params: GeneratePostgresOptions): Promise<{ rescript: string; originalTs: string }> {
+	return generateReScriptCore(params);
+}
+
+export type GenerateMySQLOptions = {
+	sql: string;
+	queryName: string;
+	isCrudFile?: boolean;
+	databaseClient: MySqlDialect;
+	schemaInfo: SchemaInfo;
+};
+
+export async function generateReScriptFromMySQL(params: GenerateMySQLOptions): Promise<{ rescript: string; originalTs: string }> {
+	return generateReScriptCore(params);
 }
 
 export type IRType =
