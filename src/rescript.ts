@@ -1,6 +1,5 @@
 import type { SchemaInfo, PostgresSchemaInfo } from './schema-info';
-import { generateTypeScriptContent, generateTsCodeForMySQL, generateTsDescriptor } from './code-generator';
-import { generateCode as generatePgTsCode } from './code-generator2';
+import { generateTypeScriptContent } from './code-generator';
 import { parseSql } from './describe-query';
 import { isLeft } from 'fp-ts/lib/Either';
 import type { BunDialect, D1Dialect, DatabaseClient, LibSqlClient, SQLiteClient, SQLiteDialect, PgDielect, MySqlDialect } from './types';
