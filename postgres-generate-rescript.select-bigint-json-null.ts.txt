@@ -1,0 +1,30 @@
+import pg from 'pg';
+
+export type SelectBigintJsonNullResult = {
+	big: bigint | null;
+	payload: JSON;
+	list: JSON;
+	nothing: string | null;
+}
+
+export async function selectBigintJsonNull(client: pg.Client | pg.Pool | pg.PoolClient): Promise<SelectBigintJsonNullResult | null> {
+	const sql = `
+	SELECT
+			CAST(123 AS bigint) as big,
+			'{"a":1}'::jsonb as payload,
+			'[1,2,3]'::json as list,
+			NULL as nothing
+	`
+	return client.query({ text: sql, rowMode: 'array' })
+		.then(res => res.rows.length > 0 ? mapArrayToSelectBigintJsonNullResult(res.rows[0]) : null);
+}
+
+function mapArrayToSelectBigintJsonNullResult(data: any) {
+	const result: SelectBigintJsonNullResult = {
+		big: data[0],
+		payload: data[1],
+		list: data[2],
+		nothing: data[3]
+	}
+	return result;
+}

@@ -1,0 +1,35 @@
+import pg from 'pg';
+
+export type SelectUsersParams = {
+	id: int;
+	name: string;
+}
+
+export type SelectUsersResult = {
+	id: int;
+	name: string;
+	email: string | null;
+	bool_expr: bool;
+	date_expr: Date;
+	datetime_expr: Date | null;
+}
+
+export async function selectUsers(client: pg.Client | pg.Pool | pg.PoolClient, params: SelectUsersParams): Promise<SelectUsersResult | null> {
+	const sql = `
+	select u.*, true as bool_expr, current_date as date_expr, current_timestamp as datetime_expr from users u where u.id = $1 and u.name = $2
+	`
+	return client.query({ text: sql, rowMode: 'array', values: [params.id, params.name] })
+		.then(res => res.rows.length > 0 ? mapArrayToSelectUsersResult(res.rows[0]) : null);
+}
+
+function mapArrayToSelectUsersResult(data: any) {
+	const result: SelectUsersResult = {
+		id: data[0],
+		name: data[1],
+		email: data[2],
+		bool_expr: data[3],
+		date_expr: new Date(data[4]),
+		datetime_expr: data[5] != null ? new Date(data[5]) : data[5]
+	}
+	return result;
+}

@@ -1,0 +1,53 @@
+%%raw("async function selectOrderBy(client, params) {
+  const sql = `
+	SELECT id FROM mytable1 ORDER BY ${buildOrderBy(params.orderBy)}
+	`
+  return client.query({ text: sql, rowMode: 'array' })
+    .then((res) => res.rows.map((row) => mapArrayToSelectOrderByResult(row)))
+}
+
+function mapArrayToSelectOrderByResult(data) {
+  const result = {
+    id: data[0],
+  }
+  return result
+}
+
+const orderByColumns = ['id', 'value']
+
+function buildOrderBy(orderBy) {
+  if (!Array.isArray(orderBy) || orderBy.length === 0) {
+    throw new Error('orderBy must be a non-empty array')
+  }
+
+  for (const { column, direction } of orderBy) {
+    if (!orderByColumns.includes(column)) {
+      throw new Error(`Invalid orderBy column: ${column}`)
+    }
+    if (direction !== 'asc' && direction !== 'desc') {
+      throw new Error(`Invalid orderBy direction: ${direction}`)
+    }
+  }
+
+  return orderBy
+    .map(({ column, direction }) => `\"${column}\" ${direction.toUpperCase()}`)
+    .join(', ')
+}
+")
+
+@@warning("-30")
+type rec selectOrderByParams = {
+  orderBy: array<selectOrderByOrderBy>
+}
+and selectOrderByResult = {
+  id: int
+}
+and selectOrderByOrderBy = {
+  column: [#"id" | #"value"],
+  direction: [#"asc" | #"desc"]
+}
+
+external selectOrderBy: (Pg.client, selectOrderByParams) => promise<array<selectOrderByResult>> = "selectOrderBy"
+let run: (Pg.client, selectOrderByParams) => promise<array<selectOrderByResult>> = (db, params) => {
+  selectOrderBy(db, params)
+}

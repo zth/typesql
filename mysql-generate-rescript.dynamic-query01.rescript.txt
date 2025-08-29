@@ -1,0 +1,201 @@
+%%raw("import { EOL } from 'os'
+
+const selectFragments = {
+  id: `m1.id`,
+  value: `m1.value`,
+  name: `m2.name`,
+  description: `m2.descr`,
+}
+
+const NumericOperatorList = ['=', '<>', '>', '<', '>=', '<=']
+
+async function dynamicQuery01(connection, params) {
+  const where = whereConditionsToObject(params?.where)
+  const paramsValues = []
+  let sql = 'SELECT'
+  if (params?.select == null || params.select.id) {
+    sql = appendSelect(sql, `m1.id`)
+  }
+  if (params?.select == null || params.select.value) {
+    sql = appendSelect(sql, `m1.value`)
+  }
+  if (params?.select == null || params.select.name) {
+    sql = appendSelect(sql, `m2.name`)
+  }
+  if (params?.select == null || params.select.description) {
+    sql = appendSelect(sql, `m2.descr as description`)
+  }
+  sql += EOL + `FROM mytable1 m1`
+  if (
+    params?.select == null ||
+    params.select.name ||
+    params.select.description ||
+    params.params?.name != null ||
+    params.params?.description != null ||
+    where.name != null ||
+    where.description != null
+  ) {
+    sql += EOL + `INNER JOIN mytable2 m2 on m1.id = m2.id`
+  }
+  sql += EOL + `WHERE 1 = 1`
+  if (params?.params?.name != null) {
+    sql += EOL + `AND m2.name = ?`
+    paramsValues.push(params.params.name)
+  }
+  if (params?.params?.description != null) {
+    sql += EOL + `AND m2.descr = ?`
+    paramsValues.push(params.params.description)
+  }
+  params?.where?.forEach((condition) => {
+    const where = whereCondition(condition)
+    if (where?.hasValue) {
+      sql += EOL + 'AND ' + where.sql
+      paramsValues.push(...where.values)
+    }
+  })
+  return connection.query({ sql, rowsAsArray: true }, paramsValues)
+    .then((res) => res[0])
+    .then((res) => res.map((data) => mapArrayToDynamicQuery01Result(data, params?.select)))
+}
+
+function mapArrayToDynamicQuery01Result(data, select) {
+  const result = {}
+  let rowIndex = 0
+  if (select == null || select.id) {
+    result.id = data[rowIndex++]
+  }
+  if (select == null || select.value) {
+    result.value = data[rowIndex++]
+  }
+  if (select == null || select.name) {
+    result.name = data[rowIndex++]
+  }
+  if (select == null || select.description) {
+    result.description = data[rowIndex++]
+  }
+  return result
+}
+
+function appendSelect(sql, selectField) {
+  if (sql == 'SELECT') {
+    return sql + EOL + selectField
+  } else {
+    return sql + ', ' + EOL + selectField
+  }
+}
+
+function whereConditionsToObject(whereConditions) {
+  const obj = {}
+  whereConditions?.forEach((condition) => {
+    const where = whereCondition(condition)
+    if (where?.hasValue) {
+      obj[condition[0]] = true
+    }
+  })
+  return obj
+}
+
+function whereCondition(condition) {
+  const selectFragment = selectFragments[condition[0]]
+  const operator = condition[1]
+
+  if (operator == 'LIKE') {
+    return {
+      sql: `${selectFragment} LIKE concat('%', ?, '%')`,
+      hasValue: condition[2] != null,
+      values: [condition[2]],
+    }
+  }
+  if (operator == 'BETWEEN') {
+    return {
+      sql: `${selectFragment} BETWEEN ? AND ?`,
+      hasValue: condition[2] != null && condition[3] != null,
+      values: [condition[2], condition[3]],
+    }
+  }
+  if (operator == 'IN' || operator == 'NOT IN') {
+    return {
+      sql: `${selectFragment} ${operator} (?)`,
+      hasValue: condition[2] != null && condition[2].length > 0,
+      values: [condition[2]],
+    }
+  }
+  if (NumericOperatorList.includes(operator)) {
+    return {
+      sql: `${selectFragment} ${operator} ?`,
+      hasValue: condition[2] != null,
+      values: [condition[2]],
+    }
+  }
+}
+")
+
+@@warning("-30")
+type rec dynamicQuery01DynamicParams = {
+  select?: dynamicQuery01Select,
+  params?: dynamicQuery01Params,
+  where?: array<dynamicQuery01Where>
+}
+and dynamicQuery01Params = {
+  name?: Null.t<string>,
+  description?: Null.t<string>
+}
+and dynamicQuery01Result = {
+  id: option<int>,
+  value: option<int>,
+  name: option<string>,
+  description: option<string>
+}
+and dynamicQuery01Select = {
+  id?: bool,
+  value?: bool,
+  name?: bool,
+  description?: bool
+}
+and numericOperator = [#"=" | #"<>" | #">" | #"<" | #">=" | #"<="]
+and stringOperator = [#"=" | #"<>" | #">" | #"<" | #">=" | #"<=" | #"LIKE"]
+and setOperator = [#"IN" | #"NOT IN"]
+and betweenOperator = [#"BETWEEN"]
+and dynamicQuery01Where = 
+| Id_compare(stringOperator, Null.t<int>)
+| Id_list(setOperator, array<int>)
+| Id_between(betweenOperator, Null.t<int>, Null.t<int>)
+| Value_compare(stringOperator, Null.t<int>)
+| Value_list(setOperator, array<int>)
+| Value_between(betweenOperator, Null.t<int>, Null.t<int>)
+| Name_compare(stringOperator, Null.t<string>)
+| Name_list(setOperator, array<string>)
+| Name_between(betweenOperator, Null.t<string>, Null.t<string>)
+| Description_compare(stringOperator, Null.t<string>)
+| Description_list(setOperator, array<string>)
+| Description_between(betweenOperator, Null.t<string>, Null.t<string>)
+
+external dynamicQuery01: (connection, dynamicQuery01DynamicParams) => promise<array<dynamicQuery01Result>> = "dynamicQuery01"
+let run: (connection, dynamicQuery01DynamicParams) => promise<array<dynamicQuery01Result>> = (db, params) => {
+  let params = {
+    ...params,
+    where: ?switch params.where {
+    | Some(list) =>
+      Some(
+        list->Array.map(w =>
+          switch w {
+          | Id_compare(op, v1) => ("id", op, v1)->Obj.magic
+          | Id_list(op, v1) => ("id", op, v1)->Obj.magic
+          | Id_between(op, v1, v2) => ("id", op, v1, v2)->Obj.magic
+          | Value_compare(op, v1) => ("value", op, v1)->Obj.magic
+          | Value_list(op, v1) => ("value", op, v1)->Obj.magic
+          | Value_between(op, v1, v2) => ("value", op, v1, v2)->Obj.magic
+          | Name_compare(op, v1) => ("name", op, v1)->Obj.magic
+          | Name_list(op, v1) => ("name", op, v1)->Obj.magic
+          | Name_between(op, v1, v2) => ("name", op, v1, v2)->Obj.magic
+          | Description_compare(op, v1) => ("description", op, v1)->Obj.magic
+          | Description_list(op, v1) => ("description", op, v1)->Obj.magic
+          | Description_between(op, v1, v2) => ("description", op, v1, v2)->Obj.magic
+          }
+        ),
+      )
+    | None => None
+    },
+  }
+  dynamicQuery01(db, params)
+}

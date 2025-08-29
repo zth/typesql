@@ -1,0 +1,45 @@
+%%raw("async function selectUsers(connection, params) {
+  const sql = `
+    select u.*, true as bool_expr, curdate() as date_expr, now() as datetime_expr
+    from users u
+    where u.id in (?)
+      and u.name in (?)
+    `
+
+  return connection.query({ sql, rowsAsArray: true }, [
+    params.ids.length == 0 ? null : params.ids,
+    params.names.length == 0 ? null : params.names,
+  ])
+    .then((res) => res[0])
+    .then((res) => res.map((data) => mapArrayToSelectUsersResult(data)))
+}
+
+function mapArrayToSelectUsersResult(data) {
+  const result = {
+    id: data[0],
+    name: data[1],
+    bool_expr: data[2],
+    date_expr: data[3],
+    datetime_expr: data[4],
+  }
+  return result
+}
+")
+
+@@warning("-30")
+type rec selectUsersParams = {
+  ids: array<int>,
+  names: array<string>
+}
+and selectUsersResult = {
+  id: int,
+  name: string,
+  bool_expr: bool,
+  date_expr: Date.t,
+  datetime_expr: Date.t
+}
+
+external selectUsers: (connection, selectUsersParams) => promise<array<selectUsersResult>> = "selectUsers"
+let run: (connection, selectUsersParams) => promise<array<selectUsersResult>> = (db, params) => {
+  selectUsers(db, params)
+}

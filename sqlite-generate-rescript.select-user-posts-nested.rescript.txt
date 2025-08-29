@@ -1,0 +1,87 @@
+%%raw("function selectUserPosts(db) {
+  const sql = `
+	-- @nested
+			SELECT
+				users.id,
+				users.name,
+				posts.id,
+				posts.title,
+				posts.body
+			FROM users
+			INNER JOIN posts on posts.fk_user = users.id
+	`
+  return db.prepare(sql)
+    .raw(true)
+    .all()
+    .map((data) => mapArrayToSelectUserPostsResult(data))
+}
+
+function mapArrayToSelectUserPostsResult(data) {
+  const result = {
+    id: data[0],
+    name: data[1],
+    id_2: data[2],
+    title: data[3],
+    body: data[4],
+  }
+  return result
+}
+
+function selectUserPostsNested(db) {
+  const selectResult = selectUserPosts(db)
+  if (selectResult.length == 0) {
+    return []
+  }
+  return collectSelectUserPostsNestedUsers(selectResult)
+}
+
+function collectSelectUserPostsNestedUsers(selectResult) {
+  const grouped = groupBy(selectResult.filter((r) => r.id != null), (r) => r.id)
+  return [...grouped.values()].map((row) => ({
+    id: row[0].id,
+    name: row[0].name,
+    posts: collectSelectUserPostsNestedPosts(row),
+  }))
+}
+
+function collectSelectUserPostsNestedPosts(selectResult) {
+  const grouped = groupBy(selectResult.filter((r) => r.id_2 != null), (r) => r.id_2)
+  return [...grouped.values()].map((row) => ({
+    id: row[0].id_2,
+    title: row[0].title,
+    body: row[0].body,
+  }))
+}
+
+const groupBy = (array, predicate) => {
+  return array.reduce((map, value, index, array) => {
+    const key = predicate(value, index, array)
+    map.get(key)?.push(value) ?? map.set(key, [value])
+    return map
+  }, new Map())
+}
+")
+
+@@warning("-30")
+type rec selectUserPostsResult = {
+  id: int,
+  name: string,
+  id_2: int,
+  title: string,
+  body: string
+}
+and selectUserPostsNestedUsers = {
+  id: int,
+  name: string,
+  posts: array<selectUserPostsNestedPosts>
+}
+and selectUserPostsNestedPosts = {
+  id: int,
+  title: string,
+  body: string
+}
+
+external selectUserPostsNested: (BetterSqlite3.client) => array<selectUserPostsNestedUsers> = "selectUserPostsNested"
+let run: (BetterSqlite3.client) => array<selectUserPostsNestedUsers> = (db) => {
+  selectUserPostsNested(db)
+}

@@ -1,0 +1,55 @@
+import type { Database } from 'better-sqlite3';
+
+export type SelectUsersParams = {
+	ids: int | null;
+	names: string[];
+	scores: float[];
+	balances: float[];
+}
+
+export type SelectUsersResult = {
+	id: int;
+	name: string;
+	created_at?: string;
+	age?: int;
+	score?: float;
+	balance?: float;
+	is_active?: float;
+	blob_col?: Uint8Array;
+	date_col?: float;
+	date_time_col?: float;
+	enum_col?: 'x-small' | 'small' | 'medium' | 'large' | 'x-large';
+	bool_expr: bool;
+	date_expr?: Date;
+	datetime_expr?: Date;
+}
+
+export function selectUsers(db: Database, params: SelectUsersParams): SelectUsersResult[] {
+	const sql = `
+	select *, true as bool_expr, date('now') as date_expr, datetime('now') as datetime_expr from users where id in (case when ? is not null then ? else null end) and name in (${params.names.map(() => '?')}) and score in (${params.scores.map(() => '?')}) and balance in (${params.balances.map(() => '?')})
+	`
+	return db.prepare(sql)
+		.raw(true)
+		.all([params.ids, params.ids, ...params.names, ...params.scores, ...params.balances])
+		.map(data => mapArrayToSelectUsersResult(data));
+}
+
+function mapArrayToSelectUsersResult(data: any) {
+	const result: SelectUsersResult = {
+		id: data[0],
+		name: data[1],
+		created_at: data[2],
+		age: data[3],
+		score: data[4],
+		balance: data[5],
+		is_active: data[6],
+		blob_col: data[7],
+		date_col: data[8],
+		date_time_col: data[9],
+		enum_col: data[10],
+		bool_expr: data[11],
+		date_expr: data[12] != null ? new Date(data[12]) : data[12],
+		datetime_expr: data[13] != null ? new Date(data[13]) : data[13]
+	}
+	return result;
+}

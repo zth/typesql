@@ -1,0 +1,96 @@
+import type { Connection } from 'mysql2/promise';
+
+export type SelectUserPostsResult = {
+    id: int;
+    name: string;
+    id_2: int;
+    title: string;
+    body: string;
+}
+
+export async function selectUserPosts(connection: Connection): Promise<SelectUserPostsResult[]> {
+    const sql = `
+    -- @nested
+    SELECT
+      users.id,
+      users.name,
+      posts.id,
+      posts.title,
+      posts.body
+    FROM users
+    INNER JOIN posts on posts.fk_user = users.id
+    `
+
+    return connection.query({sql, rowsAsArray: true})
+        .then(res => res[0] as any[])
+        .then(res => res.map(data => mapArrayToSelectUserPostsResult(data)));
+}
+
+function mapArrayToSelectUserPostsResult(data: any) {
+    const result: SelectUserPostsResult = {
+        id: data[0],
+        name: data[1],
+        id_2: data[2],
+        title: data[3],
+        body: data[4]
+    }
+    return result;
+}
+
+export type SelectUserPostsNestedUsers = {
+    id: int;
+    name: string;
+    posts: SelectUserPostsNestedPosts[];
+}
+
+export type SelectUserPostsNestedPosts = {
+    id: int;
+    title: string;
+    body: string;
+}
+
+export async function selectUserPostsNested(connection: Connection): Promise<SelectUserPostsNestedUsers[]> {
+    const selectResult = await selectUserPosts(connection);
+    if (selectResult.length == 0) {
+        return [];
+    }
+    return collectSelectUserPostsNestedUsers(selectResult);
+}
+
+function collectSelectUserPostsNestedUsers(selectResult: SelectUserPostsResult[]): SelectUserPostsNestedUsers[] {
+    const grouped = groupBy(selectResult.filter(r => r.id != null), r => r.id);
+    return [...grouped.values()].map(r => mapToSelectUserPostsNestedUsers(r))
+}
+
+function mapToSelectUserPostsNestedUsers(selectResult: SelectUserPostsResult[]): SelectUserPostsNestedUsers {
+    const firstRow = selectResult[0];
+    const result: SelectUserPostsNestedUsers = {
+        id: firstRow.id!,
+        name: firstRow.name!,
+        posts: collectSelectUserPostsNestedPosts(selectResult)
+    }
+    return result;
+}
+
+function collectSelectUserPostsNestedPosts(selectResult: SelectUserPostsResult[]): SelectUserPostsNestedPosts[] {
+    const grouped = groupBy(selectResult.filter(r => r.id_2 != null), r => r.id_2);
+    return [...grouped.values()].map(r => mapToSelectUserPostsNestedPosts(r))
+}
+
+function mapToSelectUserPostsNestedPosts(selectResult: SelectUserPostsResult[]): SelectUserPostsNestedPosts {
+    const firstRow = selectResult[0];
+    const result: SelectUserPostsNestedPosts = {
+        id: firstRow.id_2!,
+        title: firstRow.title!,
+        body: firstRow.body!
+    }
+    return result;
+}
+
+const groupBy = <T, Q>(array: T[], predicate: (value: T, index: number, array: T[]) => Q) => {
+    return array.reduce((map, value, index, array) => {
+        const key = predicate(value, index, array);
+        map.get(key)?.push(value) ?? map.set(key, [value]);
+        return map;
+    }, new Map<Q, T[]>());
+}

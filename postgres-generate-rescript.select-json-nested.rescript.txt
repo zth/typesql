@@ -1,0 +1,68 @@
+%%raw("async function selectJsonNested(client) {
+  const sql = `
+	SELECT
+		json_build_object(
+		  'user', json_build_object(
+		    'id', 1,
+		    'name', 'Alice',
+		    'address', json_build_object('city', 'NYC', 'zip', '10001')
+		  ),
+		  'tags', json_build_array('a', 'b', 'c'),
+		  'meta', json_build_object('active', true, 'scores', json_build_array(1, 2, 3))
+		) as payload,
+		json_build_array(
+		  json_build_object('id', 1),
+		  json_build_object('id', 2, 'children', json_build_array(json_build_object('id', 3)))
+		) as items
+	`
+  return client.query({ text: sql, rowMode: 'array' })
+    .then((res) => res.rows.length > 0 ? mapArrayToSelectJsonNestedResult(res.rows[0]) : null)
+}
+
+function mapArrayToSelectJsonNestedResult(data) {
+  const result = {
+    payload: data[0],
+    items: data[1],
+  }
+  return result
+}
+")
+
+@@warning("-30")
+type rec selectJsonNestedResult = {
+  payload: selectJsonNestedPayloadType,
+  items: array<selectJsonNestedItemsType>
+}
+and selectJsonNestedPayloadType = {
+  user: selectJsonNestedPayloadUserType,
+  tags: array<string>,
+  meta: selectJsonNestedPayloadMetaType
+}
+and selectJsonNestedPayloadUserType = {
+  id: int,
+  name: string,
+  address: selectJsonNestedPayloadUserAddressType
+}
+and selectJsonNestedPayloadUserAddressType = {
+  city: string,
+  zip: string
+}
+and selectJsonNestedPayloadMetaType = {
+  active: bool,
+  scores: array<int>
+}
+and selectJsonNestedItemsType = {
+  id: int
+}
+and selectJsonNestedItemsType = {
+  id: int,
+  children: array<selectJsonNestedItemsChildrenType>
+}
+and selectJsonNestedItemsChildrenType = {
+  id: int
+}
+
+external selectJsonNested: (Pg.client) => promise<Null.t<selectJsonNestedResult>> = "selectJsonNested"
+let run: (Pg.client) => promise<Null.t<selectJsonNestedResult>> = (db) => {
+  selectJsonNested(db)
+}

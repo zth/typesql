@@ -7,8 +7,12 @@
 		"typesql": "cli.js"
 	},
 	"scripts": {
-		"build": "tsc -w",
-		"test": "mocha --enable-source-maps dist/tests/**/*.js --watch --watch-files **/*.js",
+		"build": "tsc",
+		"watch": "tsc -w",
+		"test": "mocha --enable-source-maps dist/tests/**/*.js",
+		"test:rescript": "mocha --enable-source-maps dist/tests/rescript/*.js",
+		"test:watch": "mocha --enable-source-maps dist/tests/**/*.js --watch --watch-files **/*.js",
+		"test:rescript:watch": "mocha --enable-source-maps dist/tests/rescript/*.js --watch --watch-files dist/tests/rescript/**/*.js",
 		"antlr4ts": "antlr4ts -Xexact-output-dir -o ./parser/ ./grammar/*.g4",
 		"dist": "tsc && shx cp ./package.json ./README.md ./dist/src && cd ./dist/src && npm publish",
 		"dist-exp": "tsc && shx cp ./package.json ./README.md ./dist/src && cd ./dist/src && npm publish --tag experimental",
@@ -53,6 +57,8 @@
 		"mysql2": "^3.14.1",
 		"neverthrow": "^8.2.0",
 		"postgres": "^3.4.7",
-		"yargs": "^17.7.2"
+		"yargs": "^17.7.2",
+		"ts-blank-space": "^0.6.2",
+		"dprint-node": "^1.0.8"
 	}
 }

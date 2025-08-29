@@ -36,10 +36,8 @@ function mapColumnType(sqliteType: SQLiteType, client: SQLiteClient): TsType {
 	return 'any';
 }
 
-export type SQLiteTypeMapper = {
-	mapColumnType: (sqliteType: SQLiteType, client: SQLiteClient) => TsType;
-}
-
-export const mapper: SQLiteTypeMapper = {
+export const mapper: {
+    mapColumnType: (sqliteType: SQLiteType, client: SQLiteClient) => TsType;
+} = {
 	mapColumnType
 };

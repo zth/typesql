@@ -1,0 +1,57 @@
+%%raw("async function selectUsers(client, params) {
+  const sql = `
+	SELECT * FROM users ORDER BY ${buildOrderBy(params.orderBy)}
+	`
+  return client.query({ text: sql, rowMode: 'array' })
+    .then((res) => res.rows.map((row) => mapArrayToSelectUsersResult(row)))
+}
+
+function mapArrayToSelectUsersResult(data) {
+  const result = {
+    id: data[0],
+    name: data[1],
+    email: data[2],
+  }
+  return result
+}
+
+const orderByColumns = ['users.id', 'name', 'email', 'username', 'password', 'schema1_field1', 'id']
+
+function buildOrderBy(orderBy) {
+  if (!Array.isArray(orderBy) || orderBy.length === 0) {
+    throw new Error('orderBy must be a non-empty array')
+  }
+
+  for (const { column, direction } of orderBy) {
+    if (!orderByColumns.includes(column)) {
+      throw new Error(`Invalid orderBy column: ${column}`)
+    }
+    if (direction !== 'asc' && direction !== 'desc') {
+      throw new Error(`Invalid orderBy direction: ${direction}`)
+    }
+  }
+
+  return orderBy
+    .map(({ column, direction }) => `\"${column}\" ${direction.toUpperCase()}`)
+    .join(', ')
+}
+")
+
+@@warning("-30")
+type rec selectUsersParams = {
+  orderBy: array<selectUsersOrderBy>
+}
+and selectUsersResult = {
+  id: int,
+  name: string,
+  email: Null.t<string>
+}
+and selectUsersOrderBy = {
+  column: [#"users.id" | #"name" | #"email" | #"username" | #"password" | #"schema1_field1" | #"id"],
+  direction: [#"asc" | #"desc"]
+}
+
+external selectUsers: (Pg.client, selectUsersParams) => promise<array<selectUsersResult>> = "selectUsers"
+let run: (Pg.client, selectUsersParams) => promise<array<selectUsersResult>> = (db, params) => {
+  selectUsers(db, params)
+}
