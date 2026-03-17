@@ -15,13 +15,16 @@ TypeSQL supports multiple SQL database backends:
 - [mysql2](https://www.npmjs.com/package/mysql2) - the standard driver for mysql in NodeJS
 
 ##### SQLite
+
 - [better-sqlite3](https://www.npmjs.com/package/better-sqlite3) - the fastest SQLite driver for NodeJS
 - [bun:sqlite](https://bun.sh/docs/api/sqlite) - Bun's official high-performance SQLite driver
 
 ##### LibSQL
+
 - [libsql](https://www.npmjs.com/package/libsql) - the NodeJS driver for libSQL, the open-source fork of SQLite powering [Turso](https://turso.tech/)
 
 ##### Cloudflare D1
+
 - [@cloudflare/d1](https://developers.cloudflare.com/d1/) - Serverless SQLite-compatible database from Cloudflare.
 
 ## Example
@@ -65,15 +68,17 @@ deno syntax:
 
 ```json
 {
-  "databaseUri": "mysql://root:password@localhost/mydb",
-  "sqlDir": "./sqls",
-  "client": "mysql2",
-  "authToken": "authtoken",
-  "includeCrudTables": []
+	"databaseUri": "mysql://root:password@localhost/mydb",
+	"sqlDir": "./sqls",
+	"client": "mysql2",
+	"authToken": "authtoken",
+	"includeCrudTables": []
 }
 ```
+
 You can use environment variables in `typesql.json` with the `${VAR_NAME}` syntax for `databaseUri` and `authToken`.
 To load variables from a `.env` file, pass the `--env-file` flag:
+
 ```sh
 typesql --env-file=.env compile
 ```
@@ -122,6 +127,72 @@ const updateResult = await updateProduct(...
 [LIKE](/docs/like.md)
 
 [Nested Query Result](/docs/nested-query-result.md)
+
+## ReScript generation from a SQL string
+
+Generate ReScript output directly from a SQL string using the CLI. The output is printed to stdout.
+
+- With a command-line string:
+
+```sh
+typesql rescript --name selectUsers --sql "select id, name from users"
+```
+
+- From stdin (piped):
+
+```sh
+echo "select id, name from users" | typesql rescript --name selectUsers
+```
+
+- With explicit config and env file:
+
+```sh
+typesql --config ./path/to/typesql.json --env-file .env rescript --name selectUsers --sql "select * from users"
+```
+
+Notes:
+
+- `--name` is required and determines the logical query name used for generated types/functions.
+- If `--sql` is omitted, the CLI reads SQL from stdin when piped.
+- The database client and schema are resolved from your `typesql.json`.
+
+## Daemon mode (IPC / stdio)
+
+Run a long-lived process that reads the config and connects to the database once, then serves on-demand requests to generate ReScript. This avoids repeated startup/connection costs.
+
+Start with a Unix socket (default `/tmp/typesql.sock`):
+
+```sh
+typesql daemon --config ./typesql.json
+```
+
+Or use stdio (NDJSON lines):
+
+```sh
+typesql daemon --stdio --config ./typesql.json
+```
+
+Request/response format (NDJSON, one JSON per line):
+
+Request:
+
+```json
+{ "action": "rescript", "name": "selectUsers", "sql": "select id, name from users" }
+```
+
+Successful response:
+
+```json
+{ "ok": true, "action": "rescript", "name": "selectUsers", "rescript": "...", "originalTs": "..." }
+```
+
+Shutdown the daemon:
+
+```json
+{ "action": "shutdown" }
+```
+
+Using the Unix socket (`/tmp/typesql.sock`), send the same NDJSON lines to the socket and read responses line-by-line. The daemon will remain running until it receives `shutdown` or the process is terminated.
 
 ## Project Status: Under Active Development
 

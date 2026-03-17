@@ -32,3 +32,5 @@ external selectBigintJsonNull: (Pg.client) => promise<Null.t<selectBigintJsonNul
 let run: (Pg.client) => promise<Null.t<selectBigintJsonNullResult>> = (db) => {
   selectBigintJsonNull(db)
 }
+
+let default = run

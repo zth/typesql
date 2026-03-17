@@ -191,3 +191,5 @@ let run: (BetterSqlite3.client, dynamicQuery01DynamicParams) => array<dynamicQue
   }
   dynamicQuery01(db, params)
 }
+
+let default = run

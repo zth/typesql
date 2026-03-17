@@ -199,3 +199,5 @@ let run: (connection, dynamicQuery01DynamicParams) => promise<array<dynamicQuery
   }
   dynamicQuery01(db, params)
 }
+
+let default = run

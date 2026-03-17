@@ -1,5 +1,5 @@
 import type { SchemaInfo, PostgresSchemaInfo } from './schema-info';
-import { generateTypeScriptContent } from './code-generator';
+import { generateTypeScriptContent } from './codegen/code-generator';
 import { parseSql } from './describe-query';
 import { isLeft } from 'fp-ts/lib/Either';
 import type { BunDialect, D1Dialect, DatabaseClient, LibSqlClient, SQLiteClient, SQLiteDialect, PgDielect, MySqlDialect } from './types';
@@ -799,6 +799,7 @@ export function printRescript(ir: RescriptIR, clientType: DatabaseClient['type']
 		lines.push(`  ${ir.mainName}(db${paramArgStr})`);
 		lines.push(`}`);
 		lines.push('');
+		lines.push('let default = run');
 	}
 
 	return lines.join('\n');

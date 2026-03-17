@@ -61,3 +61,5 @@ external selectUsers: (BetterSqlite3.client, selectUsersParams) => array<selectU
 let run: (BetterSqlite3.client, selectUsersParams) => array<selectUsersResult> = (db, params) => {
   selectUsers(db, params)
 }
+
+let default = run

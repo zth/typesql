@@ -51,3 +51,5 @@ external selectOrderBy: (Pg.client, selectOrderByParams) => promise<array<select
 let run: (Pg.client, selectOrderByParams) => promise<array<selectOrderByResult>> = (db, params) => {
   selectOrderBy(db, params)
 }
+
+let default = run

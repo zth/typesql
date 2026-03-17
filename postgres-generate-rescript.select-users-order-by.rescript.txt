@@ -15,7 +15,7 @@ function mapArrayToSelectUsersResult(data) {
   return result
 }
 
-const orderByColumns = ['users.id', 'name', 'email', 'username', 'password', 'schema1_field1', 'id']
+const orderByColumns = ['users.id', 'name', 'email', 'username', 'password', 'schema1_field1']
 
 function buildOrderBy(orderBy) {
   if (!Array.isArray(orderBy) || orderBy.length === 0) {
@@ -47,7 +47,7 @@ and selectUsersResult = {
   email: Null.t<string>
 }
 and selectUsersOrderBy = {
-  column: [#"users.id" | #"name" | #"email" | #"username" | #"password" | #"schema1_field1" | #"id"],
+  column: [#"users.id" | #"name" | #"email" | #"username" | #"password" | #"schema1_field1"],
   direction: [#"asc" | #"desc"]
 }
 
@@ -55,3 +55,5 @@ external selectUsers: (Pg.client, selectUsersParams) => promise<array<selectUser
 let run: (Pg.client, selectUsersParams) => promise<array<selectUsersResult>> = (db, params) => {
   selectUsers(db, params)
 }
+
+let default = run

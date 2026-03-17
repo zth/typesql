@@ -6,7 +6,7 @@ import { createMysqlClientForTest, loadMysqlSchema } from '../../src/queryExectu
 import { MySqlDialect } from '../../src/types';
 
 // Toggle to regenerate fixture files locally if needed
-const WRITE_FILES = false;
+const WRITE_FILES = process.env.WRITE_RESCRIPT_FIXTURES === '1';
 
 describe('generateReScriptFromMySQL', () => {
 	let schemaInfo!: SchemaInfo;

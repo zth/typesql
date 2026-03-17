@@ -29,3 +29,5 @@ external selectBigintAndJson: (Pg.client) => promise<Null.t<selectBigintAndJsonR
 let run: (Pg.client) => promise<Null.t<selectBigintAndJsonResult>> = (db) => {
   selectBigintAndJson(db)
 }
+
+let default = run

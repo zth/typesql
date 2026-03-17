@@ -66,3 +66,5 @@ external selectJsonNested: (Pg.client) => promise<Null.t<selectJsonNestedResult>
 let run: (Pg.client) => promise<Null.t<selectJsonNestedResult>> = (db) => {
   selectJsonNested(db)
 }
+
+let default = run

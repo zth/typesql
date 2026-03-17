@@ -27,7 +27,7 @@ function mapArrayToSelectUsersResult(data: any) {
 	return result;
 }
 
-const orderByColumns = ['users.id', 'name', 'email', 'username', 'password', 'schema1_field1', 'id'] as const;
+const orderByColumns = ['users.id', 'name', 'email', 'username', 'password', 'schema1_field1'] as const;
 
 export type SelectUsersOrderBy = {
 	column: typeof orderByColumns[number];

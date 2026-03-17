@@ -37,3 +37,5 @@ external selectUsers: (Pg.client, selectUsersParams) => promise<Null.t<selectUse
 let run: (Pg.client, selectUsersParams) => promise<Null.t<selectUsersResult>> = (db, params) => {
   selectUsers(db, params)
 }
+
+let default = run

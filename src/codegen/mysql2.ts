@@ -7,23 +7,27 @@ import {
 	MySqlDialect,
 	TypeSqlError,
 	TsParameterDescriptor,
-	TypeSqlDialect, type SQLiteDialect, type LibSqlClient, type BunDialect, PgDielect,
+	TypeSqlDialect,
+	type SQLiteDialect,
+	type LibSqlClient,
+	type BunDialect,
+	PgDielect,
 	QueryType
-} from './types';
+} from '../types';
 import fs from 'node:fs';
 import path, { parse } from 'node:path';
 import camelCase from 'camelcase';
 import { type Either, isLeft, left, right } from 'fp-ts/lib/Either';
-import { mapper, type MySqlType } from './mysql-mapping';
-import { parseSql } from './describe-query';
+import { mapper, type MySqlType } from '../mysql-mapping';
+import { parseSql } from '../describe-query';
 import CodeBlockWriter from 'code-block-writer';
-import { type NestedTsDescriptor, type RelationType2, createNestedTsDescriptor } from './ts-nested-descriptor';
-import { mapToDynamicResultColumns, mapToDynamicParams, mapToDynamicSelectColumns } from './ts-dynamic-query-descriptor';
-import type { ColumnSchema, DynamicSqlInfoResult, DynamicSqlInfoResult2, FragmentInfoResult } from './mysql-query-analyzer/types';
+import { type NestedTsDescriptor, type RelationType2, createNestedTsDescriptor } from '../ts-nested-descriptor';
+import { mapToDynamicResultColumns, mapToDynamicParams, mapToDynamicSelectColumns } from '../ts-dynamic-query-descriptor';
+import type { ColumnSchema, DynamicSqlInfoResult, DynamicSqlInfoResult2, FragmentInfoResult } from '../mysql-query-analyzer/types';
 import { EOL } from 'node:os';
-import { validateAndGenerateCode } from './sqlite-query-analyzer/code-generator';
-import { generateCode } from './code-generator2';
-import { PostgresSchemaInfo, SchemaInfo } from './schema-info';
+import { validateAndGenerateCode } from './sqlite';
+import { generateCode } from './pg';
+import { PostgresSchemaInfo, SchemaInfo } from '../schema-info';
 
 export function generateTsCodeForMySQL(tsDescriptor: TsDescriptor, fileName: string, crud = false): string {
 	const writer = new CodeBlockWriter();
@@ -123,13 +127,13 @@ export function generateTsCodeForMySQL(tsDescriptor: TsDescriptor, fileName: str
 
 	const allParameters = tsDescriptor.data
 		? tsDescriptor.data.map((field, index) => {
-			//:nameIsSet, :name, :valueIsSet, :value....
-			if (crud && index % 2 === 0) {
-				const nextField = tsDescriptor.data![index + 1];
-				return `data.${nextField.name} !== undefined`;
-			}
-			return `data.${field.name}`;
-		})
+				//:nameIsSet, :name, :valueIsSet, :value....
+				if (crud && index % 2 === 0) {
+					const nextField = tsDescriptor.data![index + 1];
+					return `data.${nextField.name} !== undefined`;
+				}
+				return `data.${field.name}`;
+			})
 		: [];
 	allParameters.push(...tsDescriptor.parameterNames.map((paramName) => generateParam(paramName)));
 
@@ -686,7 +690,13 @@ export function convertToCamelCaseName(name: string): CamelCaseName {
 	return camelCaseStr;
 }
 
-export async function generateTsFile(client: DatabaseClient, sqlFile: string, tsFilePath: string, schemaInfo: SchemaInfo | PostgresSchemaInfo, isCrudFile: boolean) {
+export async function generateTsFile(
+	client: DatabaseClient,
+	sqlFile: string,
+	tsFilePath: string,
+	schemaInfo: SchemaInfo | PostgresSchemaInfo,
+	isCrudFile: boolean
+) {
 	const sqlContent = fs.readFileSync(sqlFile, 'utf8');
 
 	if (sqlContent.trim() === '') {
@@ -702,8 +712,8 @@ export async function generateTsFile(client: DatabaseClient, sqlFile: string, ts
 		queryName,
 		sqlContent,
 		schemaInfo,
-		isCrudFile,
-	})
+		isCrudFile
+	});
 
 	if (isLeft(tsContentResult)) {
 		console.error('ERROR: ', tsContentResult.left.description);

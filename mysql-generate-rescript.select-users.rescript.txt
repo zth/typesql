@@ -43,3 +43,5 @@ external selectUsers: (connection, selectUsersParams) => promise<array<selectUse
 let run: (connection, selectUsersParams) => promise<array<selectUsersResult>> = (db, params) => {
   selectUsers(db, params)
 }
+
+let default = run

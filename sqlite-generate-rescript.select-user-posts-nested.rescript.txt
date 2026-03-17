@@ -85,3 +85,5 @@ external selectUserPostsNested: (BetterSqlite3.client) => array<selectUserPostsN
 let run: (BetterSqlite3.client) => array<selectUserPostsNestedUsers> = (db) => {
   selectUserPostsNested(db)
 }
+
+let default = run

@@ -192,3 +192,5 @@ let run: (Pg.client, dynamicQuery01DynamicParams) => promise<array<dynamicQuery0
   }
   dynamicQuery01(db, params)
 }
+
+let default = run
