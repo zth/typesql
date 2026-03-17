@@ -211,7 +211,7 @@ function traverseSelectStatement(
 		const paramInference = inferParamNullabilityQueryExpression(queryExpression);
 
 		const allParameters = traverseContext.parameters.map((param, index) => {
-			const param2: TypeAndNullInfer = {
+			const param2: TypeAndNullInferParam = {
 				...param,
 				notNull: paramInference[index]
 			};
@@ -657,11 +657,15 @@ export type UpdateResult = {
 	constraints: Constraint[];
 	columns: TypeAndNullInfer[];
 	whereParams: TypeAndNullInferParam[];
+	returningColumns: TypeAndNullInfer[];
+	returing: boolean;
 };
 export type DeleteResult = {
 	constraints: Constraint[];
 	queryType: 'Delete';
 	parameters: TypeAndNullInferParam[];
+	returningColumns: TypeAndNullInfer[];
+	returing: boolean;
 };
 
 function renameFromColumns(fromColumns: TypeAndNullInfer[], recursiveNames: string[]): ColumnDef[] {

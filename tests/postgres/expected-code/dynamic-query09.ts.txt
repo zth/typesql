@@ -69,7 +69,6 @@ function buildSql(queryParams?: DynamicQuery09DynamicParams) {
 	if (!select || select.likename === true) {
 		selectedSqlFragments.push(`$1::text is null OR concat('%', t2.name, t3.name, '%') LIKE $1 as likeName`);
 		paramsValues.push(params?.name ?? null);
-		paramsValues.push(params?.name ?? null);
 	}
 
 	const fromSqlFragments: string[] = [];
@@ -92,7 +91,6 @@ function buildSql(queryParams?: DynamicQuery09DynamicParams) {
 	where?.forEach(condition => {
 		const whereClause = whereCondition(condition, placeholder);
 		if (condition.column === 'likename') {
-			paramsValues.push(params?.name ?? null);
 			paramsValues.push(params?.name ?? null);
 		}
 		if (whereClause?.hasValue) {

@@ -1,19 +1,7 @@
 import { type Either, isLeft, left, right } from 'fp-ts/lib/Either';
 import type { ColumnInfo, ColumnSchema } from '../mysql-query-analyzer/types';
 import { parseSql } from '../sqlite-query-analyzer/parser';
-import {
-	type TsDescriptor,
-	capitalize,
-	convertToCamelCaseName,
-	generateRelationType,
-	getOperator,
-	hasDateColumn,
-	hasStringColumn,
-	removeDuplicatedParameters2,
-	renameInvalidNames,
-	replaceOrderByParam,
-	writeTypeBlock
-} from '../codegen/mysql2';
+import { hasDateColumn, replaceOrderByParam, writeTypeBlock } from './mysql2';
 import CodeBlockWriter from 'code-block-writer';
 import type {
 	BunDialect,
@@ -35,10 +23,8 @@ import { type RelationType2, type TsField2, mapToTsRelation2 } from '../ts-neste
 import { preprocessSql } from '../describe-query';
 import { explainSql } from '../sqlite-query-analyzer/query-executor';
 import { mapToDynamicParams, mapToDynamicResultColumns, mapToDynamicSelectColumns } from '../ts-dynamic-query-descriptor';
-import { EOL } from 'node:os';
-import { mapper as mapperSqlite } from '../drivers/sqlite';
-import { mapper as mapperPostgres } from '../dialects/postgres';
-import { PostgresColumnInfo } from '../postgres-query-analyzer/types';
+import { mapper } from '../drivers/sqlite';
+import { capitalize, convertToCamelCaseName, generateRelationType, removeDuplicatedParameters2, renameInvalidNames, TsDescriptor, writeBuildOrderByBlock, writeBuildSqlFunction, writeDynamicQueryOperators, writeMapToResultFunction, writeNestedTypes, writeOrderByToObjectFunction, writeWhereConditionFunction, writeCollectFunction, writeGroupByFunction, createTypeNames, createCodeBlockWriter, writeDynamicQueryParamType, writeSelectFragements } from './shared/codegen-util';
 
 type ExecFunctionParams = {
 	functionName: string;
@@ -54,12 +40,12 @@ type ExecFunctionParams = {
 	returning: boolean;
 	orderBy: boolean;
 	uniqueUpdateParams: TsFieldDescriptor[];
-};
+}
 
 type MapFunctionParams = {
 	resultTypeName: string;
 	columns: TsFieldDescriptor[];
-};
+}
 
 export function validateAndGenerateCode(
 	client: SQLiteDialect | LibSqlClient | BunDialect | D1Dialect,
@@ -181,12 +167,15 @@ function createTsDescriptor(queryInfo: SchemaDef, client: SQLiteClient): TsDescr
 }
 
 function mapColumns(client: SQLiteClient, queryType: SchemaDef['queryType'], columns: ColumnInfo[], returning = false) {
-	const resultColumns = getInsertUpdateResult(client);
-	if (queryType === 'Insert' && !returning) {
-		return resultColumns;
-	}
-	if (queryType === 'Update' || queryType === 'Delete') {
-		return [resultColumns[0]];
+
+	if (!returning) {
+		const resultColumns = getInsertUpdateResult(client);
+		if (queryType === 'Insert') {
+			return resultColumns;
+		}
+		if (queryType === 'Update' || queryType === 'Delete') {
+			return [resultColumns[0]];
+		}
 	}
 
 	const escapedColumnsNames = renameInvalidNames(columns.map((col) => col.name));
@@ -244,22 +233,12 @@ function getInsertUpdateResult(client: SQLiteClient) {
 	}
 }
 
-export function mapPostgrsFieldToTsField(columns: PostgresColumnInfo[], field: Field2): TsField2 {
-	const tsField: TsField2 = {
-		name: field.name,
-		index: field.index,
-		tsType: mapperPostgres.mapColumnType(columns[field.index].type),
-		notNull: columns[field.index].notNull
-	};
-	return tsField;
-}
-
 export function mapFieldToTsField(columns: ColumnInfo[], field: Field2, client: SQLiteClient): TsField2 {
 	const tsField: TsField2 = {
 		name: field.name,
 		index: field.index,
-		tsType: mapperSqlite.mapColumnType(columns[field.index].type as SQLiteType, client),
-		notNull: columns[field.index].notNull
+		tsType: mapper.mapColumnType(columns[field.index].type as SQLiteType, client),
+		notNull: columns[field.index].intrinsicNotNull!
 	};
 	return tsField;
 }
@@ -267,7 +246,7 @@ export function mapFieldToTsField(columns: ColumnInfo[], field: Field2, client: 
 function mapParameterToTsFieldDescriptor(col: ParameterDef, client: SQLiteClient): TsParameterDescriptor {
 	const tsDesc: TsParameterDescriptor = {
 		name: col.name,
-		tsType: mapperSqlite.mapColumnType(col.columnType as SQLiteType, client),
+		tsType: mapper.mapColumnType(col.columnType as SQLiteType, client),
 		notNull: col.notNull ? col.notNull : false,
 		toDriver: parameterToDriver(col),
 		isArray: false
@@ -277,20 +256,20 @@ function mapParameterToTsFieldDescriptor(col: ParameterDef, client: SQLiteClient
 
 function parameterToDriver(param: ParameterDef): string {
 	if (param.columnType === 'DATE') {
-		return `${param.name}?.toISOString().split('T')[0]`;
+		return `${param.name}?.toISOString().split('T')[0]`
 	}
 	if (param.columnType === 'DATE_TIME') {
-		return `${param.name}?.toISOString().split('.')[0].replace('T', ' ')`;
+		return `${param.name}?.toISOString().split('.')[0].replace('T', ' ')`
 	}
 	return param.name;
 }
 
 function columnToDriver(col: ColumnInfo): string {
 	if (col.type === 'DATE') {
-		return `${col.name}?.toISOString().split('T')[0]`;
+		return `${col.name}?.toISOString().split('T')[0]`
 	}
 	if (col.type === 'DATE_TIME') {
-		return `${col.name}?.toISOString().split('.')[0].replace('T', ' ')`;
+		return `${col.name}?.toISOString().split('.')[0].replace('T', ' ')`
 	}
 	return col.name;
 }
@@ -298,7 +277,7 @@ function columnToDriver(col: ColumnInfo): string {
 function mapColumnToTsFieldDescriptor(col: ColumnInfo, client: SQLiteClient) {
 	const tsDesc: TsFieldDescriptor = {
 		name: col.name,
-		tsType: mapperSqlite.mapColumnType(col.type as SQLiteType, client),
+		tsType: mapper.mapColumnType(col.type as SQLiteType, client),
 		notNull: col.notNull,
 		optional: col.optional
 	};
@@ -308,7 +287,7 @@ function mapColumnToTsFieldDescriptor(col: ColumnInfo, client: SQLiteClient) {
 function mapColumnToTsParameterDescriptor(col: ColumnInfo, client: SQLiteClient): TsParameterDescriptor {
 	const tsDesc: TsParameterDescriptor = {
 		name: col.name,
-		tsType: mapperSqlite.mapColumnType(col.type as SQLiteType, client),
+		tsType: mapper.mapColumnType(col.type as SQLiteType, client),
 		notNull: col.notNull,
 		optional: col.optional,
 		toDriver: columnToDriver(col),
@@ -318,37 +297,36 @@ function mapColumnToTsParameterDescriptor(col: ColumnInfo, client: SQLiteClient)
 }
 
 function generateCodeFromTsDescriptor(client: SQLiteClient, queryName: string, tsDescriptor: TsDescriptor, isCrud = false, tableName = '') {
-	const writer = new CodeBlockWriter({
-		useTabs: true
-	});
+	const writer = createCodeBlockWriter();
 
-	const camelCaseName = convertToCamelCaseName(queryName);
-	const capitalizedName = capitalize(camelCaseName);
+	const {
+		camelCaseName,
+		capitalizedName,
+		dataTypeName,
+		resultTypeName,
+		paramsTypeName,
+		orderByTypeName,
+		dynamicParamsTypeName,
+		selectColumnsTypeName,
+		whereTypeName
+	} = createTypeNames(queryName);
 
 	const queryType = tsDescriptor.queryType;
 	const sql = tsDescriptor.sql;
-	const dataTypeName = `${capitalizedName}Data`;
-	const paramsTypeName = `${capitalizedName}Params`;
-	const resultTypeName = `${capitalizedName}Result`;
-	const dynamicParamsTypeName = `${capitalizedName}DynamicParams`;
-	const selectColumnsTypeName = `${capitalizedName}Select`;
-	const whereTypeName = `${capitalizedName}Where`;
-	const orderByTypeName = `${capitalizedName}OrderBy`;
 	const generateOrderBy = tsDescriptor.orderByColumns != null && tsDescriptor.orderByColumns.length > 0;
 	const uniqueParams = removeDuplicatedParameters2(tsDescriptor.parameters);
 	const uniqueUpdateParams = removeDuplicatedParameters2(tsDescriptor.data || []);
 
-	const orderByField = generateOrderBy ? `orderBy: [${orderByTypeName}, 'asc' | 'desc'][]` : undefined;
+	const orderByField = generateOrderBy ? `orderBy` : undefined;
 	const paramsTypes = removeDuplicatedParameters2(
 		tsDescriptor.dynamicQuery2 == null ? tsDescriptor.parameters : mapToDynamicParams(tsDescriptor.parameters)
 	);
 
-	let functionArguments =
-		client === 'better-sqlite3' || client === 'bun:sqlite'
-			? 'db: Database'
-			: client === 'd1'
-				? 'db: D1Database'
-				: 'client: Client | Transaction';
+	let functionArguments = client === 'better-sqlite3' || client === 'bun:sqlite'
+		? 'db: Database'
+		: client === 'd1'
+			? 'db: D1Database'
+			: 'client: Client | Transaction';
 	if (queryType === 'Update' && uniqueUpdateParams.length > 0) {
 		functionArguments += `, data: ${dataTypeName}`;
 	}
@@ -361,8 +339,8 @@ function generateCodeFromTsDescriptor(client: SQLiteClient, queryName: string, t
 	const orNull = queryType === 'Select' ? ' | null' : '';
 	const returnType = tsDescriptor.multipleRowsResult ? `${resultTypeName}[]` : `${resultTypeName}${orNull}`;
 
-	const allParameters = (tsDescriptor.data?.map((param) => fromDriver('data', param)) || []).concat(
-		tsDescriptor.parameters.map((param) => fromDriver('params', param))
+	const allParameters = (tsDescriptor.data?.map((param) => toDriver('data', param)) || []).concat(
+		tsDescriptor.parameters.map((param) => toDriver('params', param))
 	);
 
 	const queryParamsWithoutBrackets = allParameters.length > 0 ? `${allParameters.join(', ')}` : '';
@@ -372,166 +350,22 @@ function generateCodeFromTsDescriptor(client: SQLiteClient, queryName: string, t
 	writeImports(writer, client, isDynamicQuery);
 	if (tsDescriptor.dynamicQuery2 != null) {
 		writer.blankLine();
-		writer.write(`export type ${dynamicParamsTypeName} = `).block(() => {
-			writer.writeLine(`select?: ${selectColumnsTypeName};`);
-			if (paramsTypes.length > 0) {
-				writer.writeLine(`params?: ${paramsTypeName};`);
-			}
-			writer.writeLine(`where?: ${whereTypeName}[];`);
-			if (orderByField) {
-				writer.writeLine(`${orderByField};`);
-			}
-		});
+		writeDynamicQueryParamType(writer, queryName, paramsTypes.length > 0, orderByField);
 		writer.blankLine();
 		writeTypeBlock(writer, paramsTypes, paramsTypeName, false, tsDescriptor.dynamicQuery2 ? undefined : orderByField);
 		const resultTypes = tsDescriptor.dynamicQuery2 == null ? tsDescriptor.columns : mapToDynamicResultColumns(tsDescriptor.columns);
 		writeTypeBlock(writer, resultTypes, resultTypeName, false);
 		const selectFields = mapToDynamicSelectColumns(tsDescriptor.columns);
 		writeTypeBlock(writer, selectFields, selectColumnsTypeName, false);
-		writer.write('const selectFragments = ').inlineBlock(() => {
-			tsDescriptor.dynamicQuery2?.select.forEach((fragment, index) => {
-				const field = tsDescriptor.columns[index].name;
-				writer.writeLine(`${field}: \`${fragment.fragmentWitoutAlias}\`,`);
-			});
-		});
-		writer.write(' as const;');
+		writeSelectFragements(writer, tsDescriptor.dynamicQuery2.select, tsDescriptor.columns);
 		writer.blankLine();
-		writer.writeLine(`const NumericOperatorList = ['=', '<>', '>', '<', '>=', '<='] as const;`);
-		writer.writeLine('type NumericOperator = typeof NumericOperatorList[number];');
-		if (hasStringColumn(tsDescriptor.columns)) {
-			writer.writeLine(`type StringOperator = '=' | '<>' | '>' | '<' | '>=' | '<=' | 'LIKE';`);
-		}
-		writer.writeLine(`type SetOperator = 'IN' | 'NOT IN';`);
-		writer.writeLine(`type BetweenOperator = 'BETWEEN';`);
-		writer.blankLine();
-		writer.write(`export type ${whereTypeName} =`).indent(() => {
-			tsDescriptor.columns.forEach((col) => {
-				writer.writeLine(`| ['${col.name}', ${getOperator(col.tsType)}, ${col.tsType} | null]`);
-				writer.writeLine(`| ['${col.name}', SetOperator, ${col.tsType}[]]`);
-				writer.writeLine(`| ['${col.name}', BetweenOperator, ${col.tsType} | null, ${col.tsType} | null]`);
-			});
-		});
+		writeDynamicQueryOperators(writer, whereTypeName, tsDescriptor.columns);
 		writer.blankLine();
 		const asyncModified = client === 'libsql' || client === 'd1' ? 'async ' : '';
 		const returnTypeModifier = client === 'libsql' || client === 'd1' ? `Promise<${returnType}>` : returnType;
 		writer.write(`export ${asyncModified}function ${camelCaseName}(${functionArguments}): ${returnTypeModifier}`).block(() => {
-			writer.write('const where = whereConditionsToObject(params?.where);').newLine();
-			if (orderByField != null) {
-				writer.writeLine('const orderBy = orderByToObject(params.orderBy);');
-			}
-			writer.write('const paramsValues: any = [];').newLine();
-			const hasCte = (tsDescriptor.dynamicQuery2?.with.length || 0) > 0;
-			if (hasCte) {
-				writer.writeLine('const withClause = [];');
-				tsDescriptor.dynamicQuery2?.with.forEach((withFragment, index, array) => {
-					const selectConditions = withFragment.dependOnFields.map(
-						(fieldIndex) => `params.select.${tsDescriptor.columns[fieldIndex].name}`
-					);
-					if (selectConditions.length > 0) {
-						selectConditions.unshift('params?.select == null');
-					}
-					const whereConditions = withFragment.dependOnFields.map((fieldIndex) => `where.${tsDescriptor.columns[fieldIndex].name} != null`);
-					const orderByConditions = withFragment.dependOnOrderBy?.map((orderBy) => `orderBy['${orderBy}'] != null`) || [];
-					const allConditions = [...selectConditions, ...whereConditions, ...orderByConditions];
-					const paramValues = withFragment.parameters.map((paramIndex) => {
-						const param = tsDescriptor.parameters[paramIndex];
-						return fromDriver('params?.params?', param);
-					});
-					if (allConditions.length > 0) {
-						writer.write(`if (${allConditions.join(`${EOL}\t|| `)})`).block(() => {
-							writer.write(`withClause.push(\`${withFragment.fragment}\`);`);
-							paramValues.forEach((paramValues) => {
-								writer.writeLine(`paramsValues.push(${paramValues});`);
-							});
-						});
-					} else {
-						writer.write(`withClause.push(\`${withFragment.fragment}\`);`);
-						paramValues.forEach((paramValues) => {
-							writer.writeLine(`paramsValues.push(${paramValues});`);
-						});
-					}
-				});
-				writer.write(`let sql = 'WITH ' + withClause.join(',' + EOL) + EOL + 'SELECT';`).newLine();
-			} else {
-				writer.write(`let sql = 'SELECT';`).newLine();
-			}
-			tsDescriptor.dynamicQuery2?.select.forEach((select, index) => {
-				writer.write(`if (params?.select == null || params.select.${tsDescriptor.columns[index].name})`).block(() => {
-					writer.writeLine(`sql = appendSelect(sql, \`${select.fragment}\`);`);
-					select.parameters.forEach((param) => {
-						writer.writeLine(`paramsValues.push(params?.params?.${param} ?? null);`);
-					});
-				});
-			});
-
-			tsDescriptor.dynamicQuery2?.from.forEach((from, index) => {
-				if (index === 0) {
-					writer.writeLine(`sql += EOL + \`${from.fragment}\`;`);
-				} else {
-					const selectConditions = from.dependOnFields.map((fieldIndex) => `params.select.${tsDescriptor.columns[fieldIndex].name}`);
-					if (selectConditions.length > 0) {
-						selectConditions.unshift('params?.select == null');
-					}
-					const whereConditions = from.dependOnFields.map((fieldIndex) => `where.${tsDescriptor.columns[fieldIndex].name} != null`);
-					const orderByConditions = from.dependOnOrderBy?.map((orderBy) => `orderBy['${orderBy}'] != null`) || [];
-					const allConditions = [...selectConditions, ...whereConditions, ...orderByConditions];
-					const paramValues = from.parameters.map((paramIndex) => {
-						const param = tsDescriptor.parameters[paramIndex];
-						return fromDriver('params?.params?', param);
-					});
-					if (allConditions.length > 0) {
-						writer.write(`if (${allConditions.join(`${EOL}\t|| `)})`).block(() => {
-							writer.write(`sql += EOL + \`${from.fragment}\`;`);
-							paramValues.forEach((paramValues) => {
-								writer.writeLine(`paramsValues.push(${paramValues});`);
-							});
-						});
-					} else {
-						writer.write(`sql += EOL + \`${from.fragment}\`;`);
-						paramValues.forEach((paramValues) => {
-							writer.writeLine(`paramsValues.push(${paramValues});`);
-						});
-					}
-				}
-			});
-			writer.writeLine('sql += EOL + `WHERE 1 = 1`;');
-			tsDescriptor.dynamicQuery2?.where.forEach((fragment) => {
-				const paramValues = fragment.parameters.map((paramIndex) => {
-					const param = tsDescriptor.parameters[paramIndex];
-					return `${fromDriver('params?.params?', param)} ?? null`;
-				});
-				writer.writeLine(`sql += EOL + \`AND ${fragment.fragment}\`;`);
-				paramValues.forEach((paramValues) => {
-					writer.writeLine(`paramsValues.push(${paramValues});`);
-				});
-			});
-			writer.write('params?.where?.forEach(condition => ').inlineBlock(() => {
-				writer.writeLine('const where = whereCondition(condition);');
-				tsDescriptor.dynamicQuery2?.select.forEach((select, index) => {
-					if (select.parameters.length > 0) {
-						writer.write(`if (condition[0] == '${tsDescriptor.columns[index].name}')`).block(() => {
-							select.parameters.forEach((param) => {
-								writer.writeLine(`paramsValues.push(params?.params?.${param} ?? null);`);
-							});
-						});
-					}
-				});
-				writer.write('if (where?.hasValue)').block(() => {
-					writer.writeLine(`sql += EOL + 'AND ' + where.sql;`);
-					writer.write('paramsValues.push(...where.values);');
-				});
-			});
-			writer.write(');').newLine();
-			if (tsDescriptor.orderByColumns) {
-				writer.writeLine('sql += EOL + `ORDER BY ${escapeOrderBy(params.orderBy)}`;');
-			}
-			const limitOffset = tsDescriptor.dynamicQuery2?.limitOffset;
-			if (limitOffset) {
-				writer.writeLine(`sql += EOL + \`${limitOffset.fragment}\`;`);
-				limitOffset.parameters.forEach((param) => {
-					writer.writeLine(`paramsValues.push(params?.params?.${param} ?? null);`);
-				});
-			}
+			writer.blankLine();
+			writer.writeLine('const { sql, paramsValues } = buildSql(params);');
 			if (client === 'better-sqlite3') {
 				writer.write('return db.prepare(sql)').newLine();
 				writer.indent().write('.raw(true)').newLine();
@@ -553,9 +387,7 @@ function generateCodeFromTsDescriptor(client: SQLiteClient, queryName: string, t
 				writer.indent().write('.raw()').newLine();
 				writer
 					.indent()
-					.write(
-						`.then(rows => rows.map(row => mapArrayTo${resultTypeName}(row, params?.select)))${tsDescriptor.multipleRowsResult ? '' : '[0]'};`
-					);
+					.write(`.then(rows => rows.map(row => mapArrayTo${resultTypeName}(row, params?.select)))${tsDescriptor.multipleRowsResult ? '' : '[0]'};`);
 			}
 			if (client === 'libsql') {
 				writer.write('return client.execute({ sql, args: paramsValues })').newLine();
@@ -567,49 +399,28 @@ function generateCodeFromTsDescriptor(client: SQLiteClient, queryName: string, t
 					);
 			}
 		});
+		if (tsDescriptor.dynamicQuery2) {
+			writer.blankLine();
+			writeBuildSqlFunction(writer, {
+				dynamicParamsTypeName,
+				columns: tsDescriptor.columns,
+				parameters: tsDescriptor.parameters,
+				dynamicQueryInfo: tsDescriptor.dynamicQuery2,
+				dialect: 'sqlite',
+				hasOrderBy: orderByField != null,
+				toDrive: toDriver
+			})
+		}
 		writer.blankLine();
-		writer.write(`function mapArrayTo${resultTypeName}(data: any, select?: ${selectColumnsTypeName})`).block(() => {
-			writer.writeLine(`const result = {} as ${resultTypeName};`);
-			writer.writeLine('let rowIndex = -1;');
-			tsDescriptor.columns.forEach((tsField) => {
-				writer.write(`if (select == null || select.${tsField.name})`).block(() => {
-					writer.writeLine('rowIndex++;');
-					writer.writeLine(`result.${tsField.name} = ${toDriver('data[rowIndex]', tsField)};`);
-				});
-			});
-			writer.write('return result;');
-		});
-		writer.blankLine();
-		writer.write('function appendSelect(sql: string, selectField: string)').block(() => {
-			writer.write(`if (sql.toUpperCase().endsWith('SELECT'))`).block(() => {
-				writer.writeLine('return sql + EOL + selectField;');
-			});
-			writer.write('else').block(() => {
-				writer.writeLine(`return sql + ', ' + EOL + selectField;`);
-			});
-		});
-		writer.blankLine();
-		writer.write(`function whereConditionsToObject(whereConditions?: ${whereTypeName}[])`).block(() => {
-			writer.writeLine('const obj = {} as any;');
-			writer.write('whereConditions?.forEach(condition => ').inlineBlock(() => {
-				writer.writeLine('const where = whereCondition(condition);');
-				writer.write('if (where?.hasValue) ').block(() => {
-					writer.writeLine('obj[condition[0]] = true;');
-				});
-			});
-			writer.write(');');
-			writer.writeLine('return obj;');
+		writeMapToResultFunction(writer, {
+			columns: tsDescriptor.columns,
+			resultTypeName,
+			selectColumnsTypeName,
+			fromDriver: fromDriver
 		});
 		if (orderByField != null) {
 			writer.blankLine();
-			writer.write(`function orderByToObject(orderBy: ${dynamicParamsTypeName}['orderBy'])`).block(() => {
-				writer.writeLine('const obj = {} as any;');
-				writer.write('orderBy?.forEach(order => ').inlineBlock(() => {
-					writer.writeLine('obj[order[0]] = true;');
-				});
-				writer.write(');');
-				writer.writeLine('return obj;');
-			});
+			writeOrderByToObjectFunction(writer, dynamicParamsTypeName);
 		}
 		writer.blankLine();
 		writer.write('type WhereConditionResult = ').block(() => {
@@ -618,74 +429,7 @@ function generateCodeFromTsDescriptor(client: SQLiteClient, queryName: string, t
 			writer.writeLine('values: any[];');
 		});
 		writer.blankLine();
-		writer.write(`function whereCondition(condition: ${whereTypeName}): WhereConditionResult | undefined `).block(() => {
-			writer.blankLine();
-			writer.writeLine('const selectFragment = selectFragments[condition[0]];');
-			writer.writeLine('const operator = condition[1];');
-			writer.blankLine();
-			if (hasStringColumn(tsDescriptor.columns)) {
-				writer.write(`if (operator == 'LIKE') `).block(() => {
-					writer.write('return ').block(() => {
-						writer.writeLine("sql: `${selectFragment} LIKE concat('%', ?, '%')`,");
-						writer.writeLine('hasValue: condition[2] != null,');
-						writer.writeLine('values: [condition[2]]');
-					});
-				});
-			}
-			writer.write(`if (operator == 'BETWEEN') `).block(() => {
-				if (hasDateColumn(tsDescriptor.columns)) {
-					writer.writeLine('const value1 = isDate(condition[2]) ? condition[2]?.toISOString() : condition[2];');
-					writer.writeLine('const value2 = isDate(condition[3]) ? condition[3]?.toISOString() : condition[3];');
-					writer.writeLine(`const param = isDate(condition[2]) && isDate(condition[3]) ? 'date(?)' : '?';`);
-					writer.write('return ').block(() => {
-						writer.writeLine('sql: `${selectFragment} BETWEEN ${param} AND ${param}`,');
-						writer.writeLine('hasValue: value1 != null && value2 != null,');
-						writer.writeLine('values: [value1, value2]');
-					});
-				} else {
-					writer.write('return ').block(() => {
-						writer.writeLine('sql: `${selectFragment} BETWEEN ? AND ?`,');
-						writer.writeLine('hasValue: condition[2] != null && condition[3] != null,');
-						writer.writeLine('values: [condition[2], condition[3]]');
-					});
-				}
-			});
-			writer.write(`if (operator == 'IN' || operator == 'NOT IN') `).block(() => {
-				if (hasDateColumn(tsDescriptor.columns)) {
-					writer.write('return ').block(() => {
-						writer.writeLine(
-							"sql: `${selectFragment} ${operator} (${condition[2]?.map(value => isDate(value) ? 'date(?)' : '?').join(', ')})`,"
-						);
-						writer.writeLine('hasValue: condition[2] != null && condition[2].length > 0,');
-						writer.writeLine('values: condition[2].map(value => isDate(value) ? value.toISOString() : value)');
-					});
-				} else {
-					writer.write('return ').block(() => {
-						writer.writeLine("sql: `${selectFragment} ${operator} (${condition[2]?.map(_ => '?').join(', ')})`,");
-						writer.writeLine('hasValue: condition[2] != null && condition[2].length > 0,');
-						writer.writeLine('values: condition[2]');
-					});
-				}
-			});
-			writer.write('if (NumericOperatorList.includes(operator)) ').block(() => {
-				if (hasDateColumn(tsDescriptor.columns)) {
-					writer.writeLine('const value = isDate(condition[2]) ? condition[2]?.toISOString() : condition[2];');
-					writer.writeLine(`const param = isDate(condition[2]) ? 'date(?)' : '?';`);
-					writer.write('return ').block(() => {
-						writer.writeLine('sql: `${selectFragment} ${operator} ${param}`,');
-						writer.writeLine('hasValue: value != null,');
-						writer.writeLine('values: [value]');
-					});
-				} else {
-					writer.write('return ').block(() => {
-						writer.writeLine('sql: `${selectFragment} ${operator} ?`,');
-						writer.writeLine('hasValue: condition[2] != null,');
-						writer.writeLine('values: [condition[2]]');
-					});
-				}
-			});
-			writer.writeLine('return undefined;');
-		});
+		writeWhereConditionFunction(writer, whereTypeName, tsDescriptor.columns);
 		if (hasDateColumn(tsDescriptor.columns)) {
 			writer.blankLine();
 			writer.write('function isDate(value: any): value is Date').block(() => {
@@ -698,7 +442,7 @@ function generateCodeFromTsDescriptor(client: SQLiteClient, queryName: string, t
 			writer.blankLine();
 			writer.write(`export type ${dataTypeName} =`).block(() => {
 				uniqueUpdateParams.forEach((field) => {
-					const optionalOp = field.optional ? '?' : '';
+					const optionalOp = field.optional || isCrud ? '?' : '';
 					const orNull = field.notNull ? '' : ' | null';
 					writer.writeLine(`${field.name}${optionalOp}: ${field.tsType}${orNull};`);
 				});
@@ -714,7 +458,7 @@ function generateCodeFromTsDescriptor(client: SQLiteClient, queryName: string, t
 					writer.writeLine(`${field.name}${optionalOp}: ${field.tsType}${orNull};`);
 				});
 				if (generateOrderBy) {
-					writer.writeLine(`orderBy: [${orderByTypeName}, 'asc' | 'desc'][];`);
+					writer.writeLine(`orderBy: ${orderByTypeName}[];`);
 				}
 			});
 		}
@@ -773,49 +517,19 @@ function generateCodeFromTsDescriptor(client: SQLiteClient, queryName: string, t
 		returning: tsDescriptor.returning || false,
 		orderBy: (tsDescriptor.orderByColumns?.length || 0) > 0,
 		uniqueUpdateParams
-	};
+	}
 
 	if (tsDescriptor.dynamicQuery2 == null && !isCrud) {
 		writeExecFunction(writer, client, executeFunctionParams);
 	}
-	if (tsDescriptor.orderByColumns) {
-		const orderByType = tsDescriptor.dynamicQuery2 == null ? paramsTypeName : dynamicParamsTypeName;
-		if (orderByField != null) {
-			writer.blankLine();
-			writer.write('const orderByFragments = ').inlineBlock(() => {
-				tsDescriptor.orderByColumns?.forEach((col) => {
-					writer.writeLine(`'${col}': \`${col}\`,`);
-				});
-			});
-			writer.write(' as const;');
-		}
+	if (tsDescriptor.orderByColumns?.length) {
 		writer.blankLine();
-		writer.writeLine(`export type ${orderByTypeName} = keyof typeof orderByFragments;`);
-		writer.blankLine();
-		writer.write(`function escapeOrderBy(orderBy: ${orderByType}['orderBy']): string`).block(() => {
-			writer.writeLine(
-				`return orderBy.map(order => \`\${orderByFragments[order[0]]} \${order[1] == 'desc' ? 'desc' : 'asc'}\`).join(', ');`
-			);
-		});
+		writeBuildOrderByBlock(writer, tsDescriptor.orderByColumns, orderByTypeName);
 	}
 
 	if (tsDescriptor.nestedDescriptor2) {
-		const relations = tsDescriptor.nestedDescriptor2;
-		relations.forEach((relation) => {
-			const relationType = generateRelationType(capitalizedName, relation.name);
-			writer.blankLine();
-			writer.write(`export type ${relationType} = `).block(() => {
-				const uniqueNameFields = renameInvalidNames(relation.fields.map((f) => f.name));
-				relation.fields.forEach((field, index) => {
-					writer.writeLine(`${uniqueNameFields[index]}: ${field.tsType};`);
-				});
-				relation.relations.forEach((field) => {
-					const nestedRelationType = generateRelationType(capitalizedName, field.tsType);
-					const nullableOperator = field.notNull ? '' : '?';
-					writer.writeLine(`${field.name}${nullableOperator}: ${nestedRelationType};`);
-				});
-			});
-		});
+		const relations = tsDescriptor.nestedDescriptor2 || [];
+		writeNestedTypes(writer, relations, capitalizedName);
 		writer.blankLine();
 
 		relations.forEach((relation, index) => {
@@ -846,16 +560,7 @@ function generateCodeFromTsDescriptor(client: SQLiteClient, queryName: string, t
 		});
 
 		writer.blankLine();
-		writer.write('const groupBy = <T, Q>(array: T[], predicate: (value: T, index: number, array: T[]) => Q) =>').block(() => {
-			writer
-				.write('return array.reduce((map, value, index, array) => ')
-				.inlineBlock(() => {
-					writer.writeLine('const key = predicate(value, index, array);');
-					writer.writeLine('map.get(key)?.push(value) ?? map.set(key, [value]);');
-					writer.writeLine('return map;');
-				})
-				.write(', new Map<Q, T[]>());');
-		});
+		writeGroupByFunction(writer);
 	}
 
 	return writer.toString();
@@ -908,11 +613,13 @@ function writeExecutSelectCrudBlock(
 		writer.indent().write('.raw(true)').newLine();
 		writer.indent().write(`.all(${queryParams})`).newLine();
 		writer.indent().write(`.map(data => mapArrayTo${resultTypeName}(data))[0];`);
-	} else if (client === 'bun:sqlite') {
+	}
+	else if (client === 'bun:sqlite') {
 		writer.write('return db.prepare(sql)').newLine();
 		writer.indent().write(`.values(${queryParams})`).newLine();
 		writer.indent().write(`.map(data => mapArrayTo${resultTypeName}(data))[0];`);
-	} else if (client === 'd1') {
+	}
+	else if (client === 'd1') {
 		writer.write('return db.prepare(sql)').newLine();
 		writer.indent().write(`.bind(${queryParams})`).newLine();
 		writer.indent().write('.first();').newLine();
@@ -949,7 +656,7 @@ function writeExecuteInsertCrudBlock(
 		writer.write('return db.prepare(sql)').newLine();
 		writer.indent().write('.bind(...values)').newLine();
 		writer.indent().write('.run()').newLine();
-		writer.indent().write('.then(res => res.meta);');
+		writer.indent().write('.then(res => res.meta);')
 	} else {
 		writer.write('return client.execute({ sql, args: values })').newLine();
 		writer.indent().write(`.then(res => mapArrayTo${resultTypeName}(res));`).newLine();
@@ -984,7 +691,7 @@ function writeExecuteUpdateCrudBlock(
 		writer.write('return db.prepare(sql)').newLine();
 		writer.indent().write(`.bind(params.${idColumn})`).newLine();
 		writer.indent().write('.run()').newLine();
-		writer.indent().write('.then(res => res.meta);');
+		writer.indent().write('.then(res => res.meta);')
 	} else {
 		writer.write('return client.execute({ sql, args: values })').newLine();
 		writer.indent().write(`.then(res => mapArrayTo${resultTypeName}(res));`).newLine();
@@ -1014,14 +721,14 @@ function writeExecutDeleteCrudBlock(
 		writer.write('return db.prepare(sql)').newLine();
 		writer.indent().write(`.bind(${queryParams})`).newLine();
 		writer.indent().write('.run()').newLine();
-		writer.indent().write('.then(res => res.meta);');
+		writer.indent().write('.then(res => res.meta);')
 	} else {
 		writer.write(`return client.execute({ sql, args: ${queryParams} })`).newLine();
 		writer.indent().write(`.then(res => mapArrayTo${resultTypeName}(res));`).newLine();
 	}
 }
 
-function toDriver(variableData: string, param: TsFieldDescriptor) {
+function fromDriver(variableData: string, param: TsFieldDescriptor) {
 	if (param.tsType === 'Date') {
 		if (param.notNull) {
 			return `new Date(${variableData})`;
@@ -1034,7 +741,7 @@ function toDriver(variableData: string, param: TsFieldDescriptor) {
 	return variableData;
 }
 
-function fromDriver(variableName: string, param: TsParameterDescriptor): string {
+function toDriver(variableName: string, param: TsParameterDescriptor): string {
 	if (param.tsType === 'Date') {
 		return `${variableName}.${param.toDriver}`;
 	}
@@ -1046,37 +753,6 @@ function fromDriver(variableName: string, param: TsParameterDescriptor): string 
 		return `...${variableName}.${param.name}`;
 	}
 	return `${variableName}.${param.name}`;
-}
-export function writeCollectFunction(
-	writer: CodeBlockWriter,
-	relation: RelationType2,
-	columns: TsFieldDescriptor[],
-	capitalizedName: string,
-	resultTypeName: string
-) {
-	const relationType = generateRelationType(capitalizedName, relation.name);
-	const collectFunctionName = `collect${relationType}`;
-	writer.blankLine();
-	writer.write(`function ${collectFunctionName}(selectResult: ${resultTypeName}[]): ${relationType}[]`).block(() => {
-		const groupBy = columns[relation.groupIndex].name;
-		writer.writeLine(`const grouped = groupBy(selectResult.filter(r => r.${groupBy} != null), r => r.${groupBy});`);
-		writer
-			.write('return [...grouped.values()].map(row => (')
-			.inlineBlock(() => {
-				relation.fields.forEach((field, index) => {
-					const uniqueNameFields = renameInvalidNames(relation.fields.map((f) => f.name));
-					const separator = ',';
-					const fieldName = columns[field.index].name;
-					writer.writeLine(`${uniqueNameFields[index]}: row[0].${fieldName}!${separator}`);
-				});
-				relation.relations.forEach((fieldRelation) => {
-					const relationType = generateRelationType(capitalizedName, fieldRelation.name);
-					const cardinality = fieldRelation.list ? '' : '[0]';
-					writer.writeLine(`${fieldRelation.name}: collect${relationType}(row)${cardinality},`);
-				});
-			})
-			.write('))');
-	});
 }
 
 function writeImports(writer: CodeBlockWriter, client: SQLiteClient, isDynamicQuery: boolean) {
@@ -1138,12 +814,12 @@ function writeExecFunction(writer: CodeBlockWriter, client: SQLiteClient, params
 	const mapFunctionParams: MapFunctionParams = {
 		resultTypeName,
 		columns
-	};
+	}
 
 	switch (client) {
 		case 'better-sqlite3':
 			const betterSqliteArgs = 'db: Database' + restParameters;
-			if (queryType === 'Select') {
+			if (queryType === 'Select' || returning) {
 				writer.write(`export function ${functionName}(${betterSqliteArgs}): ${returnType}`).block(() => {
 					writeSql(writer, sql);
 					if (multipleRowsResult) {
@@ -1151,18 +827,24 @@ function writeExecFunction(writer: CodeBlockWriter, client: SQLiteClient, params
 						writer.indent().write('.raw(true)').newLine();
 						writer.indent().write(`.all(${queryParams})`).newLine();
 						writer.indent().write(`.map(data => mapArrayTo${resultTypeName}(data));`);
-					} else {
+					}
+					else {
 						writer.write('const res = db.prepare(sql)').newLine();
 						writer.indent().write('.raw(true)').newLine();
 						writer.indent().write(`.get(${queryParams});`).newLine();
 						writer.blankLine();
-						writer.write(`return res ? mapArrayTo${resultTypeName}(res) : null;`);
+						if (!returning) {
+							writer.write(`return res ? mapArrayTo${resultTypeName}(res) : null;`);
+						}
+						else {
+							writer.write(`return mapArrayTo${resultTypeName}(res);`);
+						}
 					}
 				});
 				writer.blankLine();
 				writeMapFunction(writer, mapFunctionParams);
 			}
-			if (queryType === 'Update' || queryType === 'Delete' || (queryType === 'Insert' && !returning)) {
+			if ((queryType === 'Update' || queryType === 'Delete' || queryType === 'Insert') && !returning) {
 				writer.write(`export function ${functionName}(${betterSqliteArgs}): ${resultTypeName}`).block(() => {
 					writeSql(writer, sql);
 					writer.write('return db.prepare(sql)').newLine();
@@ -1200,7 +882,8 @@ function writeExecFunction(writer: CodeBlockWriter, client: SQLiteClient, params
 			writer.blankLine();
 			if (queryType === 'Select' || returning) {
 				writeMapFunction(writer, mapFunctionParams);
-			} else {
+			}
+			else {
 				writeMapFunctionByName(writer, mapFunctionParams);
 			}
 			return;
@@ -1213,12 +896,14 @@ function writeExecFunction(writer: CodeBlockWriter, client: SQLiteClient, params
 						writer.write('return db.prepare(sql)').newLine();
 						writer.indent().write(`.values(${queryParametersWithoutBrackes})`).newLine();
 						writer.indent().write(`.map(data => mapArrayTo${resultTypeName}(data))${multipleRowsResult ? '' : '[0]'};`);
-					} else {
+					}
+					else {
 						writer.write('const res = db.prepare(sql)').newLine();
 						writer.indent().write(`.values(${queryParametersWithoutBrackes});`).newLine();
 						writer.blankLine();
 						writer.write(`return res.length > 0 ? mapArrayTo${resultTypeName}(res[0]) : null;`);
 					}
+
 				});
 				writer.blankLine();
 				writeMapFunction(writer, mapFunctionParams);
@@ -1272,7 +957,7 @@ function writeSql(writer: CodeBlockWriter, sql: string) {
 	const sqlSplit = sql.split('\n');
 	writer.write('const sql = `').newLine();
 	sqlSplit.forEach((sqlLine) => {
-		writer.indent().write(sqlLine).newLine();
+		writer.indent().write(sqlLine.trimEnd()).newLine();
 	});
 	writer.indent().write('`').newLine();
 }
@@ -1283,7 +968,7 @@ function writeMapFunction(writer: CodeBlockWriter, params: MapFunctionParams): v
 		writer.write(`const result: ${resultTypeName} = `).block(() => {
 			columns.forEach((col, index) => {
 				const separator = index < columns.length - 1 ? ',' : '';
-				writer.writeLine(`${col.name}: ${toDriver(`data[${index}]`, col)}${separator}`);
+				writer.writeLine(`${col.name}: ${fromDriver(`data[${index}]`, col)}${separator}`);
 			});
 		});
 		writer.writeLine('return result;');

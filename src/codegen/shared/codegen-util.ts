@@ -1,7 +1,132 @@
 import CodeBlockWriter from 'code-block-writer';
-import { TsFieldDescriptor, TsParameterDescriptor } from '../../types';
-import { DynamicSqlInfoResult2 } from '../../mysql-query-analyzer/types';
+import { CamelCaseName, QueryType, TsFieldDescriptor, TsParameterDescriptor } from '../../types';
+import { DynamicSqlInfoResult, DynamicSqlInfoResult2, SelectFragmentResult } from '../../mysql-query-analyzer/types';
 import { EOL } from 'os';
+import { NestedTsDescriptor, RelationType2 } from '../../ts-nested-descriptor';
+import camelCase from 'camelcase';
+
+export type TsDescriptor = {
+	sql: string;
+	queryType: QueryType;
+	returning?: true;
+	multipleRowsResult: boolean;
+	columns: TsFieldDescriptor[];
+	parameterNames: ParamInfo[];
+	parameters: TsParameterDescriptor[];
+	data?: TsParameterDescriptor[];
+	orderByColumns?: string[];
+	nestedDescriptor?: NestedTsDescriptor;
+	nestedDescriptor2?: RelationType2[];
+	dynamicQuery?: DynamicSqlInfoResult;
+	dynamicQuery2?: DynamicSqlInfoResult2;
+};
+
+export type ParamInfo = {
+	name: string;
+	isList: boolean;
+};
+
+export type TypeNames = {
+	camelCaseName: string;
+	capitalizedName: string;
+	dataTypeName: string;
+	resultTypeName: string;
+	paramsTypeName: string;
+	orderByTypeName: string;
+	dynamicParamsTypeName: string;
+	selectColumnsTypeName: string;
+	whereTypeName: string;
+}
+
+export function createCodeBlockWriter() {
+	const writer = new CodeBlockWriter({
+		useTabs: true,
+		newLine: EOL as '\n' | '\r\n'
+	});
+	return writer;
+}
+
+export function capitalize(name: CamelCaseName) {
+	return capitalizeStr(name);
+}
+
+export function convertToCamelCaseName(name: string): CamelCaseName {
+	const camelCaseStr = camelCase(name) as CamelCaseName;
+	return camelCaseStr;
+}
+
+export function createTypeNames(queryName: string): TypeNames {
+	const camelCaseName = convertToCamelCaseName(queryName);
+	const capitalizedName = capitalize(camelCaseName);
+	const dataTypeName = `${capitalizedName}Data`;
+	const resultTypeName = `${capitalizedName}Result`;
+	const paramsTypeName = `${capitalizedName}Params`;
+	const orderByTypeName = `${capitalizedName}OrderBy`;
+	const dynamicParamsTypeName = `${capitalizedName}DynamicParams`;
+	const selectColumnsTypeName = `${capitalizedName}Select`;
+	const whereTypeName = `${capitalizedName}Where`;
+
+	return {
+		camelCaseName,
+		capitalizedName,
+		dataTypeName,
+		resultTypeName,
+		paramsTypeName,
+		orderByTypeName,
+		dynamicParamsTypeName,
+		selectColumnsTypeName,
+		whereTypeName
+	}
+}
+
+export function generateRelationType(functionName: string, relationName: string) {
+	return `${capitalizeStr(functionName)}Nested${capitalizeStr(relationName)}`;
+}
+
+function capitalizeStr(name: string) {
+	if (name.length === 0) return name;
+	return name.charAt(0).toUpperCase() + name.slice(1);
+}
+
+//TODO - remove duplicated code
+export function removeDuplicatedParameters2(parameters: TsFieldDescriptor[]): TsFieldDescriptor[] {
+	const columnsCount: Map<string, TsFieldDescriptor> = new Map();
+	parameters.forEach((param) => {
+		const dupParam = columnsCount.get(param.name);
+		if (dupParam != null) {
+			//duplicated - two parameter null and notNull, resturn the null param (notNull == false)
+			if (param.notNull === false) {
+				columnsCount.set(param.name, param);
+			}
+			// return param;
+		} else {
+			columnsCount.set(param.name, param);
+		}
+	});
+	return [...columnsCount.values()];
+}
+
+export function renameInvalidNames(columnNames: string[]): string[] {
+	const columnsCount: Map<string, number> = new Map();
+	return columnNames.map((columnName) => {
+		if (columnsCount.has(columnName)) {
+			const count = columnsCount.get(columnName)! + 1;
+			columnsCount.set(columnName, count);
+			const newName = `${columnName}_${count}`;
+			return escapeInvalidTsField(newName);
+		}
+		columnsCount.set(columnName, 1);
+		return escapeInvalidTsField(columnName);
+	});
+}
+
+export function escapeInvalidTsField(columnName: string) {
+	const validPattern = /^[a-zA-Z0-9_$]+$/g;
+	if (!validPattern.test(columnName)) {
+		return `"${columnName}"`;
+	}
+	return columnName;
+}
 
 export function hasStringColumn(columns: TsFieldDescriptor[]) {
 	return columns.some((c) => c.tsType === 'string');
@@ -33,6 +158,30 @@ export function writeBuildOrderByBlock(writer: CodeBlockWriter, orderByColumns: 
 		writer.indent().write('.map(({ column, direction }) => `"${column}" ${direction.toUpperCase()}`)').newLine();
 		writer.indent().write(`.join(', ');`).newLine();
 	});
+}
+
+export function writeDynamicQueryParamType(writer: CodeBlockWriter, queryName: string, hasParams: boolean, orderByField: string | undefined) {
+	const { dynamicParamsTypeName, selectColumnsTypeName, paramsTypeName, whereTypeName, orderByTypeName } = createTypeNames(queryName);
+	writer.write(`export type ${dynamicParamsTypeName} = `).block(() => {
+		writer.writeLine(`select?: ${selectColumnsTypeName};`);
+		if (hasParams) {
+			writer.writeLine(`params: ${paramsTypeName};`);
+		}
+		writer.writeLine(`where?: ${whereTypeName}[];`);
+		if (orderByField) {
+			writer.writeLine(`${orderByField}: ${orderByTypeName}[];`);
+		}
+	});
+}
+
+export function writeSelectFragements(writer: CodeBlockWriter, selectFragements: SelectFragmentResult[], columns: TsFieldDescriptor[]) {
+	writer.write('const selectFragments = ').inlineBlock(() => {
+		selectFragements.forEach((fragment, index) => {
+			const field = columns[index].name;
+			writer.writeLine(`${field}: \`${fragment.fragmentWitoutAlias}\`,`);
+		});
+	});
+	writer.write(' as const;');
 }
 
 export function writeDynamicQueryOperators(writer: CodeBlockWriter, whereTypeName: string, columns: TsFieldDescriptor[]) {
@@ -120,13 +269,13 @@ export type BuildSqlFunction = {
 	dynamicQueryInfo: DynamicSqlInfoResult2;
 	columns: TsFieldDescriptor[];
 	parameters: TsParameterDescriptor[];
-	placeHolderType: 'questionMark' | 'numbered';
+	dialect: 'sqlite' | 'postgres';
 	hasOrderBy: boolean;
 	toDrive: (variable: string, param: TsParameterDescriptor) => string;
 }
 
 export function writeBuildSqlFunction(writer: CodeBlockWriter, params: BuildSqlFunction) {
-	const { dynamicParamsTypeName, dynamicQueryInfo, columns, parameters, placeHolderType, hasOrderBy, toDrive } = params;
+	const { dynamicParamsTypeName, dynamicQueryInfo, columns, parameters, dialect, hasOrderBy, toDrive } = params;
 	const optional = hasOrderBy ? '' : '?';
 	const paramsVar = parameters.length > 0 ? ', params' : '';
 	writer.write(`function buildSql(queryParams${optional}: ${dynamicParamsTypeName})`).block(() => {
@@ -221,10 +370,16 @@ export function writeBuildSqlFunction(writer: CodeBlockWriter, params: BuildSqlF
 				writer.writeLine(`paramsValues.push(${paramValues});`);
 			});
 		});
-		if (placeHolderType === 'questionMark') {
+		if (dialect === 'postgres' && dynamicQueryInfo?.limitOffset) {
+			dynamicQueryInfo?.limitOffset.parameters.forEach((param) => {
+				writer.writeLine(`paramsValues.push(params?.${param} ?? null);`);
+			});
+			writer.blankLine();
+		}
+		if (dialect === 'sqlite') {
 			writer.writeLine(`const placeholder = () => '?';`);
 		}
-		else if (placeHolderType === 'numbered') {
+		else if (dialect === 'postgres') {
 			writer.writeLine(`let currentIndex = paramsValues.length;`);
 			writer.writeLine('const placeholder = () => `$${++currentIndex}`;');
 		}
@@ -275,7 +430,7 @@ export function writeBuildSqlFunction(writer: CodeBlockWriter, params: BuildSqlF
 
 		}
 		writer.write('`;');
-		if (dynamicQueryInfo?.limitOffset) {
+		if (dialect === 'sqlite' && dynamicQueryInfo?.limitOffset) {
 			writer.blankLine();
 			dynamicQueryInfo?.limitOffset.parameters.forEach((param) => {
 				writer.writeLine(`paramsValues.push(params?.${param} ?? null);`);
@@ -316,5 +471,70 @@ export function writeOrderByToObjectFunction(writer: CodeBlockWriter, dynamicPar
 		});
 		writer.write(');');
 		writer.writeLine('return obj;');
+	});
+}
+
+export function writeNestedTypes(writer: CodeBlockWriter, relations: RelationType2[], captalizedName: string) {
+	relations.forEach((relation) => {
+		const relationType = generateRelationType(captalizedName, relation.name);
+		writer.blankLine();
+		writer.write(`export type ${relationType} = `).block(() => {
+			const uniqueNameFields = renameInvalidNames(relation.fields.map((f) => f.name));
+			relation.fields.forEach((field, index) => {
+				const nullable = field.notNull ? '' : ' | null';
+				writer.writeLine(`${uniqueNameFields[index]}: ${field.tsType}${nullable};`);
+			});
+			relation.relations.forEach((field) => {
+				const nestedRelationType = generateRelationType(captalizedName, field.tsType);
+				const nullable = field.notNull ? '' : ' | null';
+				writer.writeLine(`${field.name}: ${nestedRelationType}${nullable};`);
+			});
+		});
+	});
+}
+
+export function writeCollectFunction(
+	writer: CodeBlockWriter,
+	relation: RelationType2,
+	columns: TsFieldDescriptor[],
+	capitalizedName: string,
+	resultTypeName: string
+) {
+	const relationType = generateRelationType(capitalizedName, relation.name);
+	const collectFunctionName = `collect${relationType}`;
+	writer.blankLine();
+	writer.write(`function ${collectFunctionName}(selectResult: ${resultTypeName}[]): ${relationType}[]`).block(() => {
+		const groupBy = columns[relation.groupIndex].name;
+		writer.writeLine(`const grouped = groupBy(selectResult.filter(r => r.${groupBy} != null), r => r.${groupBy});`);
+		writer
+			.write('return [...grouped.values()].map(row => (')
+			.inlineBlock(() => {
+				relation.fields.forEach((field, index) => {
+					const uniqueNameFields = renameInvalidNames(relation.fields.map((f) => f.name));
+					const separator = ',';
+					const fieldName = columns[field.index].name;
+					writer.writeLine(`${uniqueNameFields[index]}: row[0].${fieldName}!${separator}`);
+				});
+				relation.relations.forEach((fieldRelation) => {
+					const relationType = generateRelationType(capitalizedName, fieldRelation.name);
+					const orNull = fieldRelation.notNull ? '' : ' ?? null';
+					const cardinality = fieldRelation.list ? '' : `[0]${orNull}`;
+					writer.writeLine(`${fieldRelation.name}: collect${relationType}(row)${cardinality},`);
+				});
+			})
+			.write('))');
+	});
+}
+
+export function writeGroupByFunction(writer: CodeBlockWriter) {
+	writer.write('const groupBy = <T, Q>(array: T[], predicate: (value: T, index: number, array: T[]) => Q) =>').block(() => {
+		writer
+			.write('return array.reduce((map, value, index, array) => ')
+			.inlineBlock(() => {
+				writer.writeLine('const key = predicate(value, index, array);');
+				writer.writeLine('map.get(key)?.push(value) ?? map.set(key, [value]);');
+				writer.writeLine('return map;');
+			})
+			.write(', new Map<Q, T[]>());');
 	});
 }

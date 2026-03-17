@@ -12,12 +12,13 @@ import { type Either, isLeft, left } from 'fp-ts/lib/Either';
 import { globSync } from 'glob';
 import { closeClient, createClient, loadSchemaInfo, loadTableSchema, PostgresSchemaInfo, SchemaInfo, selectTables } from './schema-info';
 import { generateCrud } from './codegen/sqlite';
-import { createCodeBlockWriter, generateCrud as generatePgCrud } from './codegen/pg';
+import { generateCrud as generatePgCrud } from './codegen/pg';
 import uniqBy from 'lodash.uniqby';
 import { buildExportList, buildExportMap, loadConfig, resolveTsFilePath } from './load-config';
 import { PostgresColumnSchema } from './drivers/types';
 import { generateReScriptFromMySQL, generateReScriptFromPostgres, generateReScriptFromSQLite } from './rescript';
 import net from 'node:net';
+import { createCodeBlockWriter } from './codegen/shared/codegen-util';
 
 const CRUD_FOLDER = 'crud';
 

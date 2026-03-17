@@ -545,11 +545,83 @@ WHERE EXTRACT(YEAR FROM timestamp_not_null_column) = :param1 AND EXTRACT(MONTH F
 		assert.deepStrictEqual(actual.value, expected);
 	});
 
+	it('dynamic-query-10 - limit offset', async () => {
+		const sql = `-- @dynamicQuery
+	SELECT 
+		t1.id, 
+		t2.name
+	FROM mytable1 t1
+	INNER JOIN mytable2 t2 on t2.id = t1.id
+	WHERE name <> :name
+	LIMIT :limit OFFSET :offset`;
+
+		const actual = await generateCode(dialect, sql, 'dynamic-query-10', schemaInfo);
+		const expected = readFileSync('tests/postgres/expected-code/dynamic-query10.ts.txt', 'utf-8');
+
+		if (actual.isErr()) {
+			assert.fail(`Shouldn't return an error: ${actual.error.description}`);
+		}
+		assert.deepStrictEqual(actual.value, expected);
+	});
+
+	it('dynamic-query-11-multiple-CTEs', async () => {
+		const sql = `-- @dynamicQuery
+WITH 
+	cte1 as (
+		select id, value from mytable1
+		WHERE greatest(value, :param1) = least(value, :param1)
+	),
+	cte2 as (
+		select id, name from mytable2
+		WHERE greatest(name, :param2) = least(name, :param2)
+	)
+SELECT 
+	c1.id,
+	c2.name
+FROM cte1 c1
+INNER JOIN cte2 c2 on c1.id = c2.id`;
+
+		const actual = await generateCode(dialect, sql, 'dynamic-query-11', schemaInfo);
+		const expected = readFileSync('tests/postgres/expected-code/dynamic-query11.ts.txt', 'utf-8');
+
+		if (actual.isErr()) {
+			assert.fail(`Shouldn't return an error: ${actual.error.description}`);
+		}
+		assert.deepStrictEqual(actual.value, expected);
+	});
+
+	it('dynamic-query-13-enum', async () => {
+		const sql = `-- @dynamicQuery
+		SELECT
+			enum_column
+		FROM all_types`;
+
+		const actual = await generateCode(dialect, sql, 'dynamic-query-13', schemaInfo);
+		const expected = readFileSync('tests/postgres/expected-code/dynamic-query13-enum.ts.txt', 'utf-8');
+
+		if (actual.isErr()) {
+			assert.fail(`Shouldn't return an error: ${actual.error.description}`);
+		}
+		assert.deepStrictEqual(actual.value, expected);
+	});
+
 	it('copy01', async () => {
 		const sql = `COPY mytable1 (value) FROM STDIN WITH CSV`;
 
 		const actual = await generateCode(dialect, sql, 'copy01', schemaInfo);
 		const expected = readFileSync('tests/postgres/expected-code/copy01.ts.txt', 'utf-8');
+
+		if (actual.isErr()) {
+			assert.fail(`Shouldn't return an error: ${actual.error.description}`);
+		}
+		assert.deepStrictEqual(actual.value, expected);
+	});
+
+	it('copy02', async () => {
+		const sql = `COPY mytable4 FROM STDIN WITH CSV`;
+
+		const actual = await generateCode(dialect, sql, 'copy02', schemaInfo);
+		const expected = readFileSync('tests/postgres/expected-code/copy02.ts.txt', 'utf-8');
 
 		if (actual.isErr()) {
 			assert.fail(`Shouldn't return an error: ${actual.error.description}`);

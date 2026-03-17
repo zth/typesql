@@ -774,27 +774,26 @@ export function printRescript(ir: RescriptIR, clientType: DatabaseClient['type']
 
 			const whereAlias = whereElemTypeName ? ir.types.find((t) => t.name === whereElemTypeName) : undefined;
 			const whereUnion = whereAlias && whereAlias.aliasOf.kind === 'union' ? whereAlias.aliasOf.of : undefined;
-			const whereTuples = whereUnion?.filter((m) => m.kind === 'tuple') as Extract<IRType, { kind: 'tuple' }>[] | undefined;
+			const whereMatchArms = whereUnion?.map(renderWhereMemberToMatchArm).filter(isDefined) ?? [];
 
-			lines.push(`  let params = {`);
-			lines.push(`    ...params,`);
-			lines.push(`    where: ?switch params.where {`);
-			lines.push(`    | Some(list) =>`);
-			lines.push(`      Some(`);
-			lines.push(`        list->Array.map(w =>`);
-			lines.push(`          switch w {`);
-			if (whereTuples && whereTuples.length > 0) {
-				for (const tu of whereTuples) {
-					const arm = renderTupleToMatchArm(tu);
-					lines.push(`          | ${arm.pattern} => ${arm.toTuple}->Obj.magic`);
+			if (whereMatchArms.length > 0) {
+				lines.push(`  let params = {`);
+				lines.push(`    ...params,`);
+				lines.push(`    where: ?switch params.where {`);
+				lines.push(`    | Some(list) =>`);
+				lines.push(`      Some(`);
+				lines.push(`        list->Array.map(w =>`);
+				lines.push(`          switch w {`);
+				for (const arm of whereMatchArms) {
+					lines.push(`          | ${arm.pattern} => ${arm.toJsValue}`);
 				}
+				lines.push(`          }`);
+				lines.push(`        ),`);
+				lines.push(`      )`);
+				lines.push(`    | None => None`);
+				lines.push(`    },`);
+				lines.push(`  }`);
 			}
-			lines.push(`          }`);
-			lines.push(`        ),`);
-			lines.push(`      )`);
-			lines.push(`    | None => None`);
-			lines.push(`    },`);
-			lines.push(`  }`);
 		}
 		lines.push(`  ${ir.mainName}(db${paramArgStr})`);
 		lines.push(`}`);
@@ -805,7 +804,7 @@ export function printRescript(ir: RescriptIR, clientType: DatabaseClient['type']
 	return lines.join('\n');
 }
 
-function renderTupleToMatchArm(t: Extract<IRType, { kind: 'tuple' }>): { pattern: string; toTuple: string } {
+function renderTupleToMatchArm(t: Extract<IRType, { kind: 'tuple' }>): { pattern: string; toJsValue: string } {
 	const [col, _op, ...vals] = t.elements;
 	const colName = col.kind === 'literal' && typeof col.value === 'string' ? col.value : 'unknown';
 	// Match constructor naming produced by renderTupleAsVariantCtor
@@ -824,7 +823,34 @@ function renderTupleToMatchArm(t: Extract<IRType, { kind: 'tuple' }>): { pattern
 	for (let i = 0; i < vals.length; i++) argNames.push(`v${i + 1}`);
 	const pattern = `${ctorName}(${argNames.join(', ')})`;
 	const tupleParts = [`"${colName}"`, ...argNames];
-	return { pattern, toTuple: `(${tupleParts.join(', ')})` };
+	return { pattern, toJsValue: `(${tupleParts.join(', ')})->Obj.magic` };
+}
+
+function renderWhereObjectToMatchArm(t: Extract<IRType, { kind: 'object' }>): { pattern: string; toJsValue: string } | undefined {
+	const spec = getWhereObjectVariantSpec(t);
+	if (!spec) {
+		return undefined;
+	}
+	if (spec.suffix === 'between') {
+		return {
+			pattern: `${spec.ctorName}(op, v1, v2)`,
+			toJsValue: `{"column": "${spec.columnName}", "op": op, "value": [v1, v2]}->Obj.magic`
+		};
+	}
+	return {
+		pattern: `${spec.ctorName}(op, v1)`,
+		toJsValue: `{"column": "${spec.columnName}", "op": op, "value": v1}->Obj.magic`
+	};
+}
+
+function renderWhereMemberToMatchArm(t: IRType): { pattern: string; toJsValue: string } | undefined {
+	if (t.kind === 'tuple') {
+		return renderTupleToMatchArm(t);
+	}
+	if (t.kind === 'object') {
+		return renderWhereObjectToMatchArm(t);
+	}
+	return undefined;
 }
 
 function printFnParamType(t: IRType | undefined, clientType: DatabaseClient['type'], ir: RescriptIR): string | undefined {
@@ -911,10 +937,12 @@ function printRsType(t: IRType, clientType: DatabaseClient['type'], ir: Rescript
 				return wrap(inner);
 			}
 
-			// Dynamic where: union of tuple types -> ReScript variant
-			const isAllTuples = nonNil.length > 0 && nonNil.every((x) => x.kind === 'tuple');
-			if (isAllTuples && ctx?.currentAliasName && ctx.currentAliasName.endsWith('Where')) {
-				const ctors = nonNil.map((tu) => renderTupleAsVariantCtor(tu as Extract<IRType, { kind: 'tuple' }>, clientType, ir));
+			// Dynamic where: union of supported tuple/object member types -> ReScript variant
+			const whereVariantCtors = ctx?.currentAliasName && ctx.currentAliasName.endsWith('Where')
+				? nonNil.map((member) => renderWhereMemberAsVariantCtor(member, clientType, ir)).filter(isDefined)
+				: [];
+			if (whereVariantCtors.length === nonNil.length && whereVariantCtors.length > 0) {
+				const ctors = whereVariantCtors;
 				const unique = Array.from(new Set(ctors));
 				return '\n' + '| ' + unique.join('\n| ');
 			}
@@ -980,6 +1008,66 @@ function renderTupleAsVariantCtor(t: Extract<IRType, { kind: 'tuple' }>, clientT
 	}
 	const payloadTypes = [opTy, ...vals.map((v) => printRsType(v, clientType, ir))];
 	return `${pascalCol}_${suffix}(${payloadTypes.join(', ')})`;
+}
+
+function getObjectField(t: Extract<IRType, { kind: 'object' }>, name: string): IRField | undefined {
+	return t.fields.find((field) => field.name === name);
+}
+
+function getWhereObjectVariantSpec(t: Extract<IRType, { kind: 'object' }>): {
+	columnName: string;
+	ctorName: string;
+	suffix: 'compare' | 'list' | 'between';
+	opType: IRType;
+	valueType: IRType;
+} | undefined {
+	const columnField = getObjectField(t, 'column');
+	const opField = getObjectField(t, 'op');
+	const valueField = getObjectField(t, 'value');
+	if (!columnField || !opField || !valueField) {
+		return undefined;
+	}
+	if (columnField.type.kind !== 'literal' || typeof columnField.type.value !== 'string') {
+		return undefined;
+	}
+	const columnName = columnField.type.value;
+	let suffix: 'compare' | 'list' | 'between' = 'compare';
+	if (opField.type.kind === 'ref') {
+		const lower = opField.type.name.toLowerCase();
+		if (lower.includes('between')) suffix = 'between';
+		else if (lower.includes('set')) suffix = 'list';
+	}
+	return {
+		columnName,
+		ctorName: `${toPascalCase(columnName)}_${suffix}`,
+		suffix,
+		opType: opField.type,
+		valueType: valueField.type
+	};
+}
+
+function renderWhereObjectAsVariantCtor(t: Extract<IRType, { kind: 'object' }>, clientType: DatabaseClient['type'], ir: RescriptIR): string | undefined {
+	const spec = getWhereObjectVariantSpec(t);
+	if (!spec) {
+		return undefined;
+	}
+	const opTy = printRsType(spec.opType, clientType, ir);
+	if (spec.suffix === 'between' && spec.valueType.kind === 'tuple') {
+		const payloadTypes = [opTy, ...spec.valueType.elements.map((part) => printRsType(part, clientType, ir))];
+		return `${spec.ctorName}(${payloadTypes.join(', ')})`;
+	}
+	const valueTy = printRsType(spec.valueType, clientType, ir);
+	return `${spec.ctorName}(${[opTy, valueTy].join(', ')})`;
+}
+
+function renderWhereMemberAsVariantCtor(t: IRType, clientType: DatabaseClient['type'], ir: RescriptIR): string | undefined {
+	if (t.kind === 'tuple') {
+		return renderTupleAsVariantCtor(t, clientType, ir);
+	}
+	if (t.kind === 'object') {
+		return renderWhereObjectAsVariantCtor(t, clientType, ir);
+	}
+	return undefined;
 }
 
 function isNullLiteral(t: IRType): boolean {
@@ -1072,4 +1160,8 @@ function formatUnionMemberForComment(t: IRType, clientType: DatabaseClient['type
 		case 'tuple':
 			return 'tuple';
 	}
+}
+
+function isDefined<T>(value: T | undefined): value is T {
+	return value !== undefined;
 }

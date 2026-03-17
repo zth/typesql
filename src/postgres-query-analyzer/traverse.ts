@@ -46,7 +46,8 @@ export type ParamInfo = {
 }
 
 type ParamWithIndex = ParamInfo & {
-	paramIndex: number;
+	parameterNumber: number;
+	paramPos: number;
 }
 
 type TraverseResult = {
@@ -175,7 +176,7 @@ function traverseSelectstmt(selectstmt: SelectstmtContext, context: TraverseCont
 
 	const selectResult = traverse_selectstmt(selectstmt, context, traverseResult);
 	//select parameters are collected after from paramters
-	traverseResult.parameters.sort((param1, param2) => param1.paramIndex - param2.paramIndex);
+	traverseResult.parameters.sort((param1, param2) => param1.paramPos - param2.paramPos);
 
 	const multipleRowsResult = !(selectResult.singleRow || isSingleRowResult(selectstmt, selectResult.columns));
 
@@ -259,7 +260,7 @@ function traverse_select_no_parens(select_no_parens: Select_no_parensContext, co
 			}
 		}
 		if (fragment) {
-			const parameters = traverseResult.parameters.slice(numParamsBefore).map((_, index) => index + numParamsBefore);
+			const parameters = getParametersIndexes(traverseResult.parameters.slice(numParamsBefore));
 			traverseResult.dynamicQueryInfo!.limitOffset = {
 				fragment,
 				parameters
@@ -277,7 +278,7 @@ function traverse_common_table_expr(common_table_expr: Common_table_exprContext,
 	const selectResult = traverse_selectstmt(select_stmt, { ...context, collectDynamicQueryInfo: false }, traverseResult);
 	const columnsWithTalbeName = selectResult.columns.map(col => ({ ...col, table: tableName } satisfies NotNullInfo));
 	if (context.collectDynamicQueryInfo) {
-		const parameters = traverseResult.parameters.slice(numParamsBefore).map((_, index) => index + numParamsBefore);
+		const parameters = getParametersIndexes(traverseResult.parameters.slice(numParamsBefore));
 		traverseResult.dynamicQueryInfo?.with.push({
 			fragment: extractOriginalSql(common_table_expr),
 			relationName: tableName,
@@ -285,6 +286,11 @@ function traverse_common_table_expr(common_table_expr: Common_table_exprContext,
 		})
 	}
 	return columnsWithTalbeName;
+}
+
+function getParametersIndexes(params: ParamWithIndex[]) {
+	const parameters = [...new Set(params.map(param => param.parameterNumber - 1))];
+	return parameters;
 }
 
 function traverse_select_clause(select_clause: Select_clauseContext, context: TraverseContext, traverseResult: TraverseResult): FromResult {
@@ -358,7 +364,7 @@ function traverse_simple_select_pramary(simple_select_pramary: Simple_select_pra
 		const numParamsBefore = traverseResult.parameters.length;
 		traverse_a_expr(where_a_expr, newContext, traverseResult);
 		if (context.collectDynamicQueryInfo) {
-			const parameters = traverseResult.parameters.slice(numParamsBefore).map((_, index) => index + numParamsBefore);
+			const parameters = getParametersIndexes(traverseResult.parameters.slice(numParamsBefore));
 			const relations = extractRelations(where_a_expr);
 			traverseResult.dynamicQueryInfo?.where.push({
 				fragment: `${extractOriginalSql(where_a_expr)}`,
@@ -490,7 +496,7 @@ function traverse_target_el(target_el: Target_elContext, context: TraverseContex
 			})
 		}
 		if (context.collectDynamicQueryInfo) {
-			const parameters = traverseResult.parameters.slice(numParamsBefore).map((_, index) => index + numParamsBefore);
+			const parameters = getParametersIndexes(traverseResult.parameters.slice(numParamsBefore));
 			const relations = extractRelations(target_el.a_expr());
 			traverseResult.dynamicQueryInfo?.select.push({
 				fragment: extractOriginalSql(target_el),
@@ -1000,8 +1006,9 @@ function traversec_expr(c_expr: C_exprContext, context: TraverseContext, travers
 		}
 		if (c_expr.PARAM()) {
 			traverseResult.parameters.push({
-				paramIndex: c_expr.start.start,
-				isNotNull: !context.propagatesNull
+				paramPos: c_expr.start.start,
+				isNotNull: !context.propagatesNull,
+				parameterNumber: Number(c_expr.PARAM().getText().slice(1)) //$1, $2...
 			});
 			return {
 				column_name: c_expr.PARAM().getText(),
@@ -1823,20 +1830,20 @@ function traverse_joins(joinList: Join[], context: TraverseContext, traverseResu
 
 		const joinTableRefResult = traverse_table_ref(join.tableRef, { ...context, fromColumns: context.fromColumns.concat(allColumns) }, traverseResult);
 		const joinColumns = joinQual?.USING() ? filterUsingColumns(joinTableRefResult.columns, joinQual) : joinTableRefResult.columns;
-		const nullableColumns = joinType?.LEFT()
-			? joinColumns.map(col => ({
-				...col,
-				original_is_nullable: col.is_nullable,
-				is_nullable: checkLeftJoinIsNullable(join, subsequentJoints, joinColumns) ? true : col.is_nullable,
-			}))
-			: joinColumns;
+		const isLeftJoin = joinType?.LEFT() != null;
+		const nullableColumns = joinColumns.map(col => ({
+			...col,
+			original_is_nullable: col.is_nullable,
+			is_nullable: isLeftJoin && checkLeftJoinIsNullable(join, subsequentJoints, joinColumns) ? true : col.is_nullable,
+		}));
+
 		allColumns.push(...nullableColumns);
 
 		if (context.collectNestedInfo && joinQual) {
 			collectNestedInfo(joinQual, joinColumns, traverseResult);
 		}
 		if (context.collectDynamicQueryInfo) {
-			const parameters = traverseResult.parameters.slice(numParamsBefore).map((_, index) => index + numParamsBefore);
+			const parameters = getParametersIndexes(traverseResult.parameters.slice(numParamsBefore));
 			collectDynamicQueryInfoTableRef(join.tableRef, joinType, joinQual, joinColumns, parameters, traverseResult);
 		}
 	});
@@ -2966,8 +2973,9 @@ function traverseCopystmt(copyStmt: CopystmtContext, dbSchema: PostgresColumnSch
 
 	const tableName = copyStmt.qualified_name().getText();
 	const copyColumns = dbSchema.filter(col => col.table.toLowerCase() === tableName.toLowerCase());
-	const columnlist = copyStmt.column_list_()?.columnlist()?.columnElem_list()
-		.map(columnElem => traverse_columnElem(columnElem, copyColumns, traverseResult));
+	const column_list_ = copyStmt.column_list_();
+	const columnlist = column_list_ != null ? column_list_.columnlist().columnElem_list()
+		.map(columnElem => traverse_columnElem(columnElem, copyColumns, traverseResult)) : copyColumns;
 
 	return {
 		queryType: 'Copy',

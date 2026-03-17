@@ -124,6 +124,9 @@ function createSchemaDefinition(
 				notNull: columnNotNull,
 				table: col.table
 			};
+			if (nestedQuery) {
+				colInfo.intrinsicNotNull = col.intrinsicNotNull;
+			}
 			return colInfo;
 		});
 		const paramsResult = queryResult.parameters.map((param, index) => {
@@ -232,15 +235,28 @@ function createSchemaDefinition(
 			};
 			return colInfo;
 		});
+		const returninColumns = queryResult.returningColumns.map((col, index) => {
+			const columnType = getVarType(substitutions, col.type);
+			const columnNotNull = col.notNull === true;
+			const colInfo: ColumnInfo = {
+				name: col.name,
+				type: verifyNotInferred(columnType),
+				notNull: columnNotNull
+			};
+			return colInfo;
+		});
 
 		const schemaDef: SchemaDef = {
 			sql,
 			queryType: queryResult.queryType,
 			multipleRowsResult: false,
-			columns: [],
+			columns: returninColumns,
 			data: paramsResult,
 			parameters: whereParams
 		};
+		if (queryResult.returing) {
+			schemaDef.returning = true;
+		}
 
 		return right(schemaDef);
 	}
@@ -255,14 +271,27 @@ function createSchemaDefinition(
 			};
 			return colInfo;
 		});
+		const returninColumns = queryResult.returningColumns.map((col, index) => {
+			const columnType = getVarType(substitutions, col.type);
+			const columnNotNull = col.notNull === true;
+			const colInfo: ColumnInfo = {
+				name: col.name,
+				type: verifyNotInferred(columnType),
+				notNull: columnNotNull
+			};
+			return colInfo;
+		});
 
 		const schemaDef: SchemaDef = {
 			sql,
 			queryType: queryResult.queryType,
 			multipleRowsResult: false,
-			columns: [],
+			columns: returninColumns,
 			parameters: whereParams
 		};
+		if (queryResult.returing) {
+			schemaDef.returning = true;
+		}
 
 		return right(schemaDef);
 	}

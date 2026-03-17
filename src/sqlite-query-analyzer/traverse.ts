@@ -240,6 +240,7 @@ function traverse_select_core(
 						name: col.columnName,
 						type: col.columnType,
 						notNull: col.notNull,
+						intrinsicNotNull: col.intrinsicNotNull,
 						table: table,
 						hidden: col.hidden
 					});
@@ -297,6 +298,7 @@ function traverse_select_core(
 			table: selectField.table,
 			columnType: selectField.type,
 			notNull: selectField.notNull,
+			intrinsicNotNull: selectField.intrinsicNotNull,
 			columnKey: '',
 			hidden: selectField.hidden || 0
 		};
@@ -338,7 +340,8 @@ function traverse_select_core(
 			const columnName: ColumnName = { name: col.name, table: col.table };
 			const column: TypeAndNullInfer = {
 				...col,
-				notNull: col.notNull || isNotNull(columnName, whereExpr) || isNotNull(columnName, havingExpr)
+				notNull: col.notNull || isNotNull(columnName, whereExpr) || isNotNull(columnName, havingExpr),
+				intrinsicNotNull: col.intrinsicNotNull
 			}
 			return column;
 		}),
@@ -426,7 +429,8 @@ function traverse_table_or_subquery(
 				allFields.push(
 					...filteredFields.map((field) => ({
 						...field,
-						notNull: false
+						notNull: false,
+						intrinsicNotNull: field.notNull
 					}))
 				);
 			} else {
@@ -539,6 +543,7 @@ function traverse_expr(expr: ExprContext, traverseContext: TraverseContext): Typ
 			name: type.columnName,
 			type: type.columnType,
 			notNull: type.notNull,
+			intrinsicNotNull: type.notNull,
 			table: type.tableAlias || type.table,
 			hidden: type.hidden
 		};
@@ -2052,7 +2057,7 @@ function traverse_insert_stmt(insert_stmt: Insert_stmtContext, traverseContext: 
 	}
 
 	const returning_clause = insert_stmt.returning_clause();
-	const returninColumns = returning_clause ? traverse_returning_clause(returning_clause, fromColumns) : [];
+	const returninColumns = returning_clause ? traverse_returning_clause(returning_clause, { ...traverseContext, fromColumns }) : [];
 
 	const queryResult: InsertResult = {
 		queryType: 'Insert',
@@ -2064,7 +2069,9 @@ function traverse_insert_stmt(insert_stmt: Insert_stmtContext, traverseContext: 
 	return queryResult;
 }
 
-function traverse_returning_clause(returning_clause: Returning_clauseContext, fromColumns: ColumnDef[]) {
+function traverse_returning_clause(returning_clause: Returning_clauseContext, traverseContext: TraverseContext) {
+	const { fromColumns } = traverseContext;
+
 	const result_column_list = returning_clause.result_column_list();
 	const result = result_column_list.flatMap((result_column) => {
 		if (result_column.STAR()) {
@@ -2077,6 +2084,11 @@ function traverse_returning_clause(returning_clause: Returning_clauseContext, fr
 				};
 				return newCol;
 			});
+		}
+		const expr = result_column.expr();
+		if (expr) {
+			const exprResult = traverse_expr(expr, traverseContext);
+			return exprResult;
 		}
 		return [];
 	});
@@ -2123,12 +2135,17 @@ function traverse_update_stmt(update_stmt: Update_stmtContext, traverseContext: 
 		}
 	});
 
+	const returning_clause = update_stmt.returning_clause();
+	const returningColumns = returning_clause ? traverse_returning_clause(returning_clause, { ...traverseContext, fromColumns }) : [];
+
 	const queryResult: UpdateResult = {
 		queryType: 'Update',
 		constraints: traverseContext.constraints,
 		columns: updateColumns,
 		whereParams: whereParams,
-		parameters: traverseContext.parameters
+		parameters: traverseContext.parameters,
+		returing: returning_clause != null,
+		returningColumns
 	};
 	return queryResult;
 }
@@ -2140,10 +2157,15 @@ function traverse_delete_stmt(delete_stmt: Delete_stmtContext, traverseContext: 
 	const expr = delete_stmt.expr();
 	traverse_expr(expr, { ...traverseContext, fromColumns });
 
+	const returning_clause = delete_stmt.returning_clause();
+	const returningColumns = returning_clause ? traverse_returning_clause(returning_clause, { ...traverseContext, fromColumns }) : [];
+
 	const queryResult: DeleteResult = {
 		queryType: 'Delete',
 		constraints: traverseContext.constraints,
-		parameters: traverseContext.parameters
+		parameters: traverseContext.parameters,
+		returningColumns,
+		returing: returning_clause != null
 	};
 	return queryResult;
 }

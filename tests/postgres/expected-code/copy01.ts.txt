@@ -7,6 +7,8 @@ export type Copy01Params = {
 	value: number | null;
 }
 
+const columns = ['value'] as const;
+
 export async function copy01(client: pg.Client | pg.PoolClient, values: Copy01Params[]): Promise<void> {
 	const sql = `
 	COPY mytable1 (value) FROM STDIN WITH CSV
@@ -21,7 +23,7 @@ export async function copy01(client: pg.Client | pg.PoolClient, values: Copy01Pa
 function jsonToCsv(values: Copy01Params[]): string {
 	return values
 		.map(value =>
-			Object.values(value)
+			columns.map(col => value[col])
 				.map(val => escapeValue(val))
 				.join(',')
 		)
@@ -29,5 +31,10 @@ function jsonToCsv(values: Copy01Params[]): string {
 }
 
 function escapeValue(val: any): string {
-	return val != null ? JSON.stringify(val).replace(/\n/g, '\\n') : '';
+	if (val == null) {
+		return '';
+	}
+	const str = String(val);
+	const escaped = str.replace(/"/g, '""');
+	return `"${escaped}"`;
 }

@@ -24,8 +24,8 @@ export type Nested02NestedA1 = {
 }
 
 export type Nested02NestedA2 = {
-	id: number | null;
-	address: string | null;
+	id: number;
+	address: string;
 }
 
 export async function nested02(client: pg.Client | pg.Pool | pg.PoolClient, params: Nested02Params): Promise<Nested02Result[]> {
@@ -68,7 +68,7 @@ function collectNested02NestedC(selectResult: Nested02Result[]): Nested02NestedC
 	return [...grouped.values()].map(row => ({
 		id: row[0].id!,
 		a1: collectNested02NestedA1(row)[0],
-		a2: collectNested02NestedA2(row)[0],
+		a2: collectNested02NestedA2(row)[0] ?? null,
 	}))
 }
 
