@@ -1,5 +1,4 @@
-%%raw("function selectUserPosts(db) {
-  const sql = `
+%%raw("const selectUserPostsSql = `
 	-- @nested
 			SELECT
 				users.id,
@@ -10,12 +9,21 @@
 			FROM users
 			INNER JOIN posts on posts.fk_user = users.id
 	`
-  return db.prepare(sql)
-    .raw(true)
+const selectUserPostsStatementCache = new WeakMap()
+function getSelectUserPostsStatement(db) {
+  const cached = selectUserPostsStatementCache.get(db)
+  if (cached != null) {
+    return cached
+  }
+  const statement = db.prepare(selectUserPostsSql)
+  selectUserPostsStatementCache.set(db, statement)
+  return statement
+}
+function selectUserPosts(db) {
+  return getSelectUserPostsStatement(db).raw(true)
     .all()
     .map((data) => mapArrayToSelectUserPostsResult(data))
 }
-
 function mapArrayToSelectUserPostsResult(data) {
   const result = {
     id: data[0],
@@ -34,7 +42,6 @@ function selectUserPostsNested(db) {
   }
   return collectSelectUserPostsNestedUsers(selectResult)
 }
-
 function collectSelectUserPostsNestedUsers(selectResult) {
   const grouped = groupBy(selectResult.filter((r) => r.id != null), (r) => r.id)
   return [...grouped.values()].map((row) => ({
@@ -43,7 +50,6 @@ function collectSelectUserPostsNestedUsers(selectResult) {
     posts: collectSelectUserPostsNestedPosts(row),
   }))
 }
-
 function collectSelectUserPostsNestedPosts(selectResult) {
   const grouped = groupBy(selectResult.filter((r) => r.id_2 != null), (r) => r.id_2)
   return [...grouped.values()].map((row) => ({
@@ -52,7 +58,6 @@ function collectSelectUserPostsNestedPosts(selectResult) {
     body: row[0].body,
   }))
 }
-
 const groupBy = (array, predicate) => {
   return array.reduce((map, value, index, array) => {
     const key = predicate(value, index, array)

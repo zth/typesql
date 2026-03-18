@@ -156,6 +156,15 @@ Notes:
 - If `--sql` is omitted, the CLI reads SQL from stdin when piped.
 - The database client and schema are resolved from your `typesql.json`.
 
+### SQLite prepared statement caching
+
+For SQLite ReScript generation (`better-sqlite3` and `bun:sqlite`), TypeSQL caches prepared statements internally for generated queries whose SQL text is static. This is done inside the generated JavaScript embedded in the ReScript module, so the public ReScript API does not change.
+
+- The cache is scoped per database instance, so repeated calls on the same `db` reuse the prepared statement.
+- This applies to static generated query files, including regular `SELECT`/`INSERT`/`UPDATE`/`DELETE` queries and nested-query helpers when the SQL text is fixed.
+- `@dynamicQuery` and other cases where the final SQL text can change per call are not cached. That includes patterns such as dynamic `ORDER BY` and list expansion like `IN (:ids)`.
+- Generated CRUD helpers are also not cached yet.
+
 ## Daemon mode (IPC / stdio)
 
 Run a long-lived process that reads the config and connects to the database once, then serves on-demand requests to generate ReScript. This avoids repeated startup/connection costs.

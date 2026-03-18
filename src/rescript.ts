@@ -334,16 +334,22 @@ export type GenerateSqlOptions = {
 function rescriptFromTs(
 	tsContent: string,
 	queryName: string,
-	databaseClient: DatabaseClient['type']
+	databaseClient: DatabaseClient['type'],
+	isCrudFile = false
 ): { rescript: string; originalTs: string } {
 	const tsCleaned = tsContent.replace(/^\s*import\s+pg\s+from\s+['"]pg['"];?\s*\n?/gm, '').replace(/\bexport\s+/g, '');
-	const ir = extractRescriptIRFromTypeScript(tsCleaned, queryName);
-	const blankedJs = tsBlankSpace(tsCleaned);
-	const formattedJs = dprint.format('generated.js', blankedJs, {
+	const source = ts.createSourceFile('generated.ts', tsCleaned, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+	const transformedSource = transformSQLitePreparedStatementCacheForRescript(source, databaseClient, isCrudFile);
+	const ir = extractRescriptIRFromSourceFile(transformedSource, queryName);
+	const transformedTs =
+		transformedSource === source ? tsCleaned : ts.createPrinter({ newLine: ts.NewLineKind.LineFeed }).printFile(transformedSource);
+	const blankedJs = tsBlankSpace(transformedTs);
+	const formatOptions = {
 		lineWidth: 100,
 		semiColons: 'asi',
 		quoteStyle: 'alwaysSingle'
-	});
+	} as const;
+	const formattedJs = dprint.format('generated.js', blankedJs, formatOptions);
 	const rescript = printRescript(ir, databaseClient, { rawJs: formattedJs });
 	return { rescript, originalTs: tsContent };
 }
@@ -361,7 +367,7 @@ export async function generateReScriptFromSQLite(params: GenerateSqlOptions): Pr
 	if (isLeft(generated)) {
 		throw new Error(generated.left.description);
 	}
-	return rescriptFromTs(generated.right, queryName, databaseClient.type);
+	return rescriptFromTs(generated.right, queryName, databaseClient.type, params.isCrudFile ?? false);
 }
 
 export type GeneratePostgresOptions = {
@@ -385,7 +391,7 @@ export async function generateReScriptFromPostgres(params: GeneratePostgresOptio
 	if (isLeft(result)) {
 		throw new Error(result.left.description);
 	}
-	return rescriptFromTs(result.right, queryName, databaseClient.type);
+	return rescriptFromTs(result.right, queryName, databaseClient.type, params.isCrudFile ?? false);
 }
 
 export type GenerateMySQLOptions = {
@@ -415,7 +421,7 @@ export async function generateReScriptFromMySQL(params: GenerateMySQLOptions): P
 	if (isLeft(tsContent)) {
 		throw new Error(tsContent.left.description);
 	}
-	return rescriptFromTs(tsContent.right, queryName, databaseClient.type);
+	return rescriptFromTs(tsContent.right, queryName, databaseClient.type, params.isCrudFile ?? false);
 }
 
 export type IRType =
@@ -448,6 +454,10 @@ export type RescriptIR = {
 export function extractRescriptIRFromTypeScript(tsCode: string, queryName: string): RescriptIR {
 	// Enable parent pointers so getText works reliably on nested nodes
 	const source = ts.createSourceFile('generated.ts', tsCode, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+	return extractRescriptIRFromSourceFile(source, queryName);
+}
+
+function extractRescriptIRFromSourceFile(source: ts.SourceFile, queryName: string): RescriptIR {
 	const pascalName = toPascalCase(queryName);
 
 	// Collect const literal arrays we care about (orderByColumns)
@@ -700,6 +710,215 @@ function collectConstStringArrayLiterals(source: ts.SourceFile): ConstStringArra
 
 function encodeRawString(s: string): string {
 	return s.replace(/\\/g, '\\\\').replace(/\"/g, '\\"');
+}
+
+function getPreparedStatementNames(functionName: string) {
+	const capitalized = functionName.charAt(0).toUpperCase() + functionName.slice(1);
+	return {
+		sqlConstName: `${functionName}Sql`,
+		cacheConstName: `${functionName}StatementCache`,
+		getterName: `get${capitalized}Statement`
+	};
+}
+
+function transformSQLitePreparedStatementCacheForRescript(
+	source: ts.SourceFile,
+	clientType: DatabaseClient['type'],
+	isCrudFile: boolean
+): ts.SourceFile {
+	if ((clientType !== 'better-sqlite3' && clientType !== 'bun:sqlite') || isCrudFile) {
+		return source;
+	}
+	let didChange = false;
+	const statements: ts.Statement[] = [];
+
+	for (const statement of source.statements) {
+		const transformed = rewriteStaticSqlitePreparedFunction(statement);
+		if (transformed != null) {
+			statements.push(...transformed);
+			didChange = true;
+		} else {
+			statements.push(statement);
+		}
+	}
+
+	if (!didChange) {
+		return source;
+	}
+
+	return ts.factory.updateSourceFile(source, ts.factory.createNodeArray(statements));
+}
+
+function rewriteStaticSqlitePreparedFunction(statement: ts.Statement): ts.Statement[] | undefined {
+	if (!ts.isFunctionDeclaration(statement) || statement.name == null || statement.body == null) {
+		return undefined;
+	}
+
+	const sqlDeclaration = findStaticSqlDeclaration(statement.body);
+	if (sqlDeclaration == null) {
+		return undefined;
+	}
+
+	const functionName = statement.name.text;
+	const { getterName } = getPreparedStatementNames(functionName);
+	let didReplacePrepare = false;
+	const transformed = ts.transform(statement, [
+		(context) => {
+			const visit = (node: ts.Node): ts.Node => {
+				if (
+					ts.isCallExpression(node) &&
+					ts.isPropertyAccessExpression(node.expression) &&
+					ts.isIdentifier(node.expression.expression) &&
+					node.expression.expression.text === 'db' &&
+					node.expression.name.text === 'prepare' &&
+					node.arguments.length === 1 &&
+					ts.isIdentifier(node.arguments[0]!) &&
+					node.arguments[0]!.text === 'sql'
+				) {
+					didReplacePrepare = true;
+					return ts.factory.createCallExpression(ts.factory.createIdentifier(getterName), undefined, [ts.factory.createIdentifier('db')]);
+				}
+				return ts.visitEachChild(node, visit, context);
+			};
+			return (node) => ts.visitNode(node, visit) as ts.FunctionDeclaration;
+		}
+	]);
+
+	const transformedStatement = transformed.transformed[0] as ts.FunctionDeclaration;
+	transformed.dispose();
+	if (!didReplacePrepare || transformedStatement.body == null) {
+		return undefined;
+	}
+
+	const bodyStatements = transformedStatement.body.statements.filter((_, index) => index !== sqlDeclaration.index);
+	const updatedStatement = ts.factory.updateFunctionDeclaration(
+		transformedStatement,
+		transformedStatement.modifiers,
+		transformedStatement.asteriskToken,
+		transformedStatement.name,
+		transformedStatement.typeParameters,
+		transformedStatement.parameters,
+		transformedStatement.type,
+		ts.factory.updateBlock(transformedStatement.body, bodyStatements)
+	);
+
+	return [...createPreparedStatementCacheStatements(functionName, sqlDeclaration.template), updatedStatement];
+}
+
+function findStaticSqlDeclaration(body: ts.Block): { index: number; template: ts.NoSubstitutionTemplateLiteral } | undefined {
+	for (const [index, statement] of body.statements.entries()) {
+		if (!ts.isVariableStatement(statement)) {
+			continue;
+		}
+		const declaration = statement.declarationList.declarations[0];
+		if (
+			declaration == null ||
+			statement.declarationList.declarations.length !== 1 ||
+			!ts.isIdentifier(declaration.name) ||
+			declaration.name.text !== 'sql' ||
+			declaration.initializer == null ||
+			!ts.isNoSubstitutionTemplateLiteral(declaration.initializer)
+		) {
+			continue;
+		}
+		return {
+			index,
+			template: declaration.initializer
+		};
+	}
+	return undefined;
+}
+
+function createPreparedStatementCacheStatements(functionName: string, template: ts.NoSubstitutionTemplateLiteral): ts.Statement[] {
+	const { sqlConstName, cacheConstName, getterName } = getPreparedStatementNames(functionName);
+	return [
+		ts.factory.createVariableStatement(
+			undefined,
+			ts.factory.createVariableDeclarationList(
+				[ts.factory.createVariableDeclaration(sqlConstName, undefined, undefined, template)],
+				ts.NodeFlags.Const
+			)
+		),
+		ts.factory.createVariableStatement(
+			undefined,
+			ts.factory.createVariableDeclarationList(
+				[
+					ts.factory.createVariableDeclaration(
+						cacheConstName,
+						undefined,
+						undefined,
+						ts.factory.createNewExpression(ts.factory.createIdentifier('WeakMap'), undefined, [])
+					)
+				],
+				ts.NodeFlags.Const
+			)
+		),
+		ts.factory.createFunctionDeclaration(
+			undefined,
+			undefined,
+			getterName,
+			undefined,
+			[ts.factory.createParameterDeclaration(undefined, undefined, 'db')],
+			undefined,
+			ts.factory.createBlock(
+				[
+					ts.factory.createVariableStatement(
+						undefined,
+						ts.factory.createVariableDeclarationList(
+							[
+								ts.factory.createVariableDeclaration(
+									'cached',
+									undefined,
+									undefined,
+									ts.factory.createCallExpression(
+										ts.factory.createPropertyAccessExpression(ts.factory.createIdentifier(cacheConstName), 'get'),
+										undefined,
+										[ts.factory.createIdentifier('db')]
+									)
+								)
+							],
+							ts.NodeFlags.Const
+						)
+					),
+					ts.factory.createIfStatement(
+						ts.factory.createBinaryExpression(
+							ts.factory.createIdentifier('cached'),
+							ts.SyntaxKind.ExclamationEqualsToken,
+							ts.factory.createNull()
+						),
+						ts.factory.createBlock([ts.factory.createReturnStatement(ts.factory.createIdentifier('cached'))], true)
+					),
+					ts.factory.createVariableStatement(
+						undefined,
+						ts.factory.createVariableDeclarationList(
+							[
+								ts.factory.createVariableDeclaration(
+									'statement',
+									undefined,
+									undefined,
+									ts.factory.createCallExpression(
+										ts.factory.createPropertyAccessExpression(ts.factory.createIdentifier('db'), 'prepare'),
+										undefined,
+										[ts.factory.createIdentifier(sqlConstName)]
+									)
+								)
+							],
+							ts.NodeFlags.Const
+						)
+					),
+					ts.factory.createExpressionStatement(
+						ts.factory.createCallExpression(
+							ts.factory.createPropertyAccessExpression(ts.factory.createIdentifier(cacheConstName), 'set'),
+							undefined,
+							[ts.factory.createIdentifier('db'), ts.factory.createIdentifier('statement')]
+						)
+					),
+					ts.factory.createReturnStatement(ts.factory.createIdentifier('statement'))
+				],
+				true
+			)
+		)
+	];
 }
 
 // ReScript printer and helpers
