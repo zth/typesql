@@ -1,0 +1,26 @@
+%%raw("async function selectUnnestFrom(client) {
+  const sql = `
+	SELECT * FROM unnest(ARRAY[1, 2, 3]) AS t(id)
+	`
+  return client.query({ text: sql, rowMode: 'array' })
+    .then((res) => res.rows.map((row) => mapArrayToSelectUnnestFromResult(row)))
+}
+
+function mapArrayToSelectUnnestFromResult(data) {
+  const result = {
+    id: data[0],
+  }
+  return result
+}
+")
+
+type selectUnnestFromResult = {
+  id: Null.t<int>
+}
+
+external selectUnnestFrom: (Pg.client) => promise<array<selectUnnestFromResult>> = "selectUnnestFrom"
+let run: (Pg.client) => promise<array<selectUnnestFromResult>> = (db) => {
+  selectUnnestFrom(db)
+}
+
+let default = run

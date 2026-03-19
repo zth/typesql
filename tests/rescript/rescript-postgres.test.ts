@@ -194,6 +194,108 @@ AND m2.descr = :description`;
 		assert.equal(rescript, fs.readFileSync('postgres-generate-rescript.select-users-order-by.rescript.txt', 'utf8'));
 	});
 
+	it('generates code for generate_series function tables', async () => {
+		const sql = 'SELECT * FROM generate_series(1, 5) AS g';
+
+		const queryName = 'selectGenerateSeriesFrom';
+		const { rescript, originalTs } = await generateReScriptFromPostgres({
+			sql,
+			queryName,
+			isCrudFile: false,
+			databaseClient,
+			schemaInfo
+		});
+
+		if (WRITE_FILES) {
+			fs.writeFileSync('postgres-generate-rescript.select-generate-series-from.rescript.txt', rescript);
+			fs.writeFileSync('postgres-generate-rescript.select-generate-series-from.ts.txt', originalTs);
+		}
+
+		assert.equal(rescript, fs.readFileSync('postgres-generate-rescript.select-generate-series-from.rescript.txt', 'utf8'));
+	});
+
+	it('generates code for unnest function tables with alias columns', async () => {
+		const sql = 'SELECT * FROM unnest(ARRAY[1, 2, 3]) AS t(id)';
+
+		const queryName = 'selectUnnestFrom';
+		const { rescript, originalTs } = await generateReScriptFromPostgres({
+			sql,
+			queryName,
+			isCrudFile: false,
+			databaseClient,
+			schemaInfo
+		});
+
+		if (WRITE_FILES) {
+			fs.writeFileSync('postgres-generate-rescript.select-unnest-from.rescript.txt', rescript);
+			fs.writeFileSync('postgres-generate-rescript.select-unnest-from.ts.txt', originalTs);
+		}
+
+		assert.equal(rescript, fs.readFileSync('postgres-generate-rescript.select-unnest-from.rescript.txt', 'utf8'));
+	});
+
+	it('generates code for typed jsonb_to_recordset function tables', async () => {
+		const sql = `SELECT * FROM jsonb_to_recordset('[{"id":1,"name":"a"}]') AS t(id int, name text)`;
+
+		const queryName = 'selectJsonbToRecordset';
+		const { rescript, originalTs } = await generateReScriptFromPostgres({
+			sql,
+			queryName,
+			isCrudFile: false,
+			databaseClient,
+			schemaInfo
+		});
+
+		if (WRITE_FILES) {
+			fs.writeFileSync('postgres-generate-rescript.select-jsonb-to-recordset.rescript.txt', rescript);
+			fs.writeFileSync('postgres-generate-rescript.select-jsonb-to-recordset.ts.txt', originalTs);
+		}
+
+		assert.equal(rescript, fs.readFileSync('postgres-generate-rescript.select-jsonb-to-recordset.rescript.txt', 'utf8'));
+	});
+
+	it('generates code for a user-defined function table', async () => {
+		const sql = `SELECT u.id, check_users.*
+FROM users u
+CROSS JOIN LATERAL check_users(u)`;
+
+		const queryName = 'selectCheckUsers';
+		const { rescript, originalTs } = await generateReScriptFromPostgres({
+			sql,
+			queryName,
+			isCrudFile: false,
+			databaseClient,
+			schemaInfo
+		});
+
+		if (WRITE_FILES) {
+			fs.writeFileSync('postgres-generate-rescript.select-check-users.rescript.txt', rescript);
+			fs.writeFileSync('postgres-generate-rescript.select-check-users.ts.txt', originalTs);
+		}
+
+		assert.equal(rescript, fs.readFileSync('postgres-generate-rescript.select-check-users.rescript.txt', 'utf8'));
+	});
+
+	it('generates code for a user-defined function returning SETOF table rows', async () => {
+		const sql = 'SELECT * FROM get_mytable1()';
+
+		const queryName = 'selectGetMytable1';
+		const { rescript, originalTs } = await generateReScriptFromPostgres({
+			sql,
+			queryName,
+			isCrudFile: false,
+			databaseClient,
+			schemaInfo
+		});
+
+		if (WRITE_FILES) {
+			fs.writeFileSync('postgres-generate-rescript.select-get-mytable1.rescript.txt', rescript);
+			fs.writeFileSync('postgres-generate-rescript.select-get-mytable1.ts.txt', originalTs);
+		}
+
+		assert.equal(rescript, fs.readFileSync('postgres-generate-rescript.select-get-mytable1.rescript.txt', 'utf8'));
+	});
+
 	it.skip('handled ? order by', async () => {
 		const sql = `SELECT 
     emp_no, 

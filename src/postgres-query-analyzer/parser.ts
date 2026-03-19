@@ -4,8 +4,18 @@ import { PostgresColumnSchema } from '../drivers/types';
 import { Result, err, ok } from 'neverthrow';
 import { CheckConstraintResult } from '../drivers/postgres';
 import { UserFunctionSchema } from './types';
+import { PostgresBuiltinFunctionSchema } from './builtin-functions';
+import { TraverseOptions } from './traverse';
 
-export function parseSql(sql: string, dbSchema: PostgresColumnSchema[], checkConstraints: CheckConstraintResult, userFunctions: UserFunctionSchema[], options = defaultOptions()): PostgresTraverseResult {
+export function parseSql(
+	sql: string,
+	dbSchema: PostgresColumnSchema[],
+	checkConstraints: CheckConstraintResult,
+	userFunctions: UserFunctionSchema[],
+	builtinFunctionsOrOptions: PostgresBuiltinFunctionSchema[] | TraverseOptions = [],
+	maybeOptions = defaultOptions()
+): PostgresTraverseResult {
+	const { builtinFunctions, options } = normalizeFunctionResolutionArgs(builtinFunctionsOrOptions, maybeOptions);
 	const parser = _parseSql(sql) as any;
 	const syntaxErrors: string[] = [];
 	if (typeof parser.removeErrorListeners === 'function' && typeof parser.addErrorListener === 'function') {
@@ -26,7 +36,7 @@ export function parseSql(sql: string, dbSchema: PostgresColumnSchema[], checkCon
 		throw new Error(message);
 	}
 
-	const traverseResult = traverseSmt(stmt, dbSchema, checkConstraints, userFunctions, options);
+	const traverseResult = traverseSmt(stmt, dbSchema, checkConstraints, userFunctions, builtinFunctions, options);
 
 	return {
 		...traverseResult,
@@ -34,13 +44,36 @@ export function parseSql(sql: string, dbSchema: PostgresColumnSchema[], checkCon
 	};
 }
 
-export function safeParseSql(sql: string, dbSchema: PostgresColumnSchema[], checkConstraints: CheckConstraintResult, userFunctions: UserFunctionSchema[], options = defaultOptions()): Result<PostgresTraverseResult, string> {
+export function safeParseSql(
+	sql: string,
+	dbSchema: PostgresColumnSchema[],
+	checkConstraints: CheckConstraintResult,
+	userFunctions: UserFunctionSchema[],
+	builtinFunctionsOrOptions: PostgresBuiltinFunctionSchema[] | TraverseOptions = [],
+	maybeOptions = defaultOptions()
+): Result<PostgresTraverseResult, string> {
 	try {
-		const result = parseSql(sql, dbSchema, checkConstraints, userFunctions, options);
+		const result = parseSql(sql, dbSchema, checkConstraints, userFunctions, builtinFunctionsOrOptions, maybeOptions);
 		return ok(result);
 	}
 	catch (e) {
 		const error = e as Error;
 		return err(error.message);
 	}
+}
+
+function normalizeFunctionResolutionArgs(
+	builtinFunctionsOrOptions: PostgresBuiltinFunctionSchema[] | TraverseOptions,
+	options: TraverseOptions
+) {
+	if (Array.isArray(builtinFunctionsOrOptions)) {
+		return {
+			builtinFunctions: builtinFunctionsOrOptions,
+			options
+		};
+	}
+	return {
+		builtinFunctions: [] as PostgresBuiltinFunctionSchema[],
+		options: builtinFunctionsOrOptions
+	};
 }

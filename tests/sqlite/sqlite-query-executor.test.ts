@@ -323,11 +323,11 @@ describe('sqlite-query-executor', () => {
 		}
 
 		const actual = dbSchema.right;
-		const expected = replaceNewlines(`CREATE TABLE mytable1 (
+		const expected = `CREATE TABLE mytable1 (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     value INTEGER
-)`);
-		assert.deepStrictEqual(actual, expected);
+)`;
+		assert.deepStrictEqual(normalizeNewlines(actual), normalizeNewlines(expected));
 	});
 
 	it('loadDbSchema - albums with non unique index', () => {
@@ -380,7 +380,10 @@ describe('sqlite-query-executor', () => {
 		}
 
 		const actual = queryResult.value;
-		const expected = replaceNewlines(`CREATE TABLE all_types (
+		if (actual == null) {
+			assert.fail(`Shouldn't return an empty result`);
+		}
+		const expected = `CREATE TABLE all_types (
     int_column INT,
     integer_column INTEGER,
     tinyiny_column TINYINT,
@@ -420,11 +423,11 @@ describe('sqlite-query-executor', () => {
 );CREATE TABLE enum_types2(
     id INTEGER PRIMARY KEY,
     column1 TEXT CHECK         (   column1 IN ('f', 'g')   )
-)`);
-		assert.deepStrictEqual(actual, expected);
+)`;
+		assert.deepStrictEqual(normalizeNewlines(actual), normalizeNewlines(expected));
 	});
 });
 
-function replaceNewlines(input: string): string {
-	return input.replace(/\n/g, '\r\n');
+function normalizeNewlines(input: string): string {
+	return input.replace(/\r\n/g, '\n');
 }

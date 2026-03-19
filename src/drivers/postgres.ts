@@ -6,6 +6,7 @@ import { ForeignKeyInfo } from '../sqlite-query-analyzer/query-executor';
 import { groupBy } from '../util';
 import { transformCheckToEnum } from '../postgres-query-analyzer/enum-parser';
 import { UserFunctionSchema } from '../postgres-query-analyzer/types';
+import { PostgresBuiltinFunctionSchema } from '../postgres-query-analyzer/builtin-functions';
 import { PostgresEnumType } from '../sqlite-query-analyzer/types';
 
 export function loadDbSchema(sql: Sql, schemas: string[] | null = null): ResultAsync<PostgresColumnSchema[], TypeSqlError> {
@@ -222,6 +223,13 @@ export function loadUserFunctions(sql: Sql, schemas: string[] | null = null): Re
 	)();
 }
 
+export function loadBuiltinFunctions(sql: Sql): ResultAsync<PostgresBuiltinFunctionSchema[], TypeSqlError> {
+	return ResultAsync.fromThrowable(
+		() => _loadBuiltinFunctions(sql),
+		err => convertPostgresErrorToTypeSQLError(err)
+	)();
+}
+
 function _loadUserFunctions(sql: Sql, schemas: string[] | null): Promise<UserFunctionSchema[]> {
 	return sql<UserFunctionSchema[]>`SELECT 
 			n.nspname AS schema,
@@ -242,4 +250,21 @@ function _loadUserFunctions(sql: Sql, schemas: string[] | null): Promise<UserFun
 		AND p.prokind = 'f'  -- 'f' = function, 'p' = procedure, 'a' = aggregate
 		-- and l.lanname = 'sql'
 		ORDER BY n.nspname, p.proname`;
+}
+
+function _loadBuiltinFunctions(sql: Sql): Promise<PostgresBuiltinFunctionSchema[]> {
+	return sql<PostgresBuiltinFunctionSchema[]>`SELECT
+			n.nspname AS schema,
+			p.proname AS function_name,
+			pg_get_function_identity_arguments(p.oid) AS identity_arguments,
+			pg_get_function_result(p.oid) AS return_type,
+			p.proretset AS returns_set,
+			l.lanname AS language
+		FROM pg_proc p
+		JOIN pg_namespace n ON n.oid = p.pronamespace
+		JOIN pg_language l ON l.oid = p.prolang
+		WHERE n.nspname = 'pg_catalog'
+		AND p.prokind = 'f'
+		AND p.proretset = true
+		ORDER BY n.nspname, p.proname, pg_get_function_identity_arguments(p.oid)`;
 }

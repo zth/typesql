@@ -1,6 +1,7 @@
 import { CheckConstraintResult, EnumMap, EnumResult } from '../../src/drivers/postgres';
 import { PostgresColumnSchema } from '../../src/drivers/types';
 import { UserFunctionSchema } from '../../src/postgres-query-analyzer/types';
+import { PostgresBuiltinFunctionSchema } from '../../src/postgres-query-analyzer/builtin-functions';
 import { PostgresSchemaInfo } from '../../src/schema-info';
 import postgres from 'postgres';
 
@@ -1167,12 +1168,48 @@ END;
 	}
 ]
 
+export const builtinFunctions: PostgresBuiltinFunctionSchema[] = [
+	{
+		schema: 'pg_catalog',
+		function_name: 'generate_series',
+		identity_arguments: 'integer, integer',
+		return_type: 'SETOF integer',
+		returns_set: true,
+		language: 'internal'
+	},
+	{
+		schema: 'pg_catalog',
+		function_name: 'unnest',
+		identity_arguments: 'anyarray',
+		return_type: 'SETOF anyelement',
+		returns_set: true,
+		language: 'internal'
+	},
+	{
+		schema: 'pg_catalog',
+		function_name: 'jsonb_to_recordset',
+		identity_arguments: 'jsonb',
+		return_type: 'SETOF record',
+		returns_set: true,
+		language: 'internal'
+	},
+	{
+		schema: 'pg_catalog',
+		function_name: 'regexp_split_to_table',
+		identity_arguments: 'text, text',
+		return_type: 'SETOF text',
+		returns_set: true,
+		language: 'internal'
+	}
+]
+
 export function createSchemaInfo(): PostgresSchemaInfo {
 	const schemaInfo: PostgresSchemaInfo = {
 		kind: 'pg',
 		columns: schema,
 		foreignKeys: [],
 		userFunctions,
+		builtinFunctions,
 		enumTypes: enumMap,
 		checkConstraints
 	}

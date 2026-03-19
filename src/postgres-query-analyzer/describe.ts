@@ -20,12 +20,12 @@ import { createType, groupByParamNumber, mapToParamDef } from './describe-shared
 
 function describeQueryRefine(describeParameters: DescribeParameters): Result<PostgresSchemaDef, TypeSqlError> {
 	const { sql, postgresDescribeResult, namedParameters, schemaInfo } = describeParameters;
-	const { columns: dbSchema, enumTypes, userFunctions, checkConstraints } = schemaInfo;
+	const { columns: dbSchema, enumTypes, userFunctions, builtinFunctions, checkConstraints } = schemaInfo;
 	const generateNestedInfo = hasAnnotation(sql, '@nested');
 	const generateDynamicQueryInfo = hasAnnotation(sql, '@dynamicQuery');
 	const baselineSchema = createBaselineSchema(sql, postgresDescribeResult, namedParameters, enumTypes);
 
-	const parseResult = safeParseSql(sql, dbSchema, checkConstraints, userFunctions, { collectNestedInfo: generateNestedInfo, collectDynamicQueryInfo: generateDynamicQueryInfo });
+	const parseResult = safeParseSql(sql, dbSchema, checkConstraints, userFunctions, builtinFunctions, { collectNestedInfo: generateNestedInfo, collectDynamicQueryInfo: generateDynamicQueryInfo });
 	if (parseResult.isErr()) {
 		return ok(addAnalysis(baselineSchema, 'describe-only', {
 			code: 'postgres.describe_only_fallback',

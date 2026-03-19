@@ -11,7 +11,7 @@ describe('postgres-degraded-analysis', () => {
 		await client.end();
 	});
 
-	it('degrades for SELECT * FROM generate_series(1, 5) AS g', async () => {
+	it('returns full analysis for SELECT * FROM generate_series(1, 5) AS g', async () => {
 		const sql = 'SELECT * FROM generate_series(1, 5) AS g';
 		const actual = await describeQuery(client, sql, schemaInfo);
 
@@ -20,14 +20,18 @@ describe('postgres-degraded-analysis', () => {
 		}
 
 		const value = actual.value as any;
-		assert.strictEqual(value.analysis?.mode, 'describe-only');
+		assert.strictEqual(value.analysis, undefined);
 		assert.strictEqual(value.queryType, 'Select');
 		assert.strictEqual(value.multipleRowsResult, true);
 		assert.deepStrictEqual(value.parameters, []);
-		assert.strictEqual(value.columns.length, 1);
-		assert.strictEqual(value.columns[0].type, 'int4');
-		assert.strictEqual(value.columns[0].notNull, false);
-		assert.ok(value.analysis?.diagnostics.length);
+		assert.deepStrictEqual(value.columns, [
+			{
+				name: 'g',
+				type: 'int4',
+				notNull: false,
+				table: 'g'
+			}
+		]);
 	});
 
 	it('degrades for XMLTABLE instead of throwing', async () => {
@@ -57,7 +61,10 @@ FROM XMLTABLE('/rows/row'
 	});
 
 	it('generateCode emits a degraded warning for fallback analysis', async () => {
-		const sql = 'SELECT * FROM generate_series(1, 5) AS g';
+		const sql = `SELECT *
+FROM XMLTABLE('/rows/row'
+	PASSING '<rows><row id="1"/></rows>'
+	COLUMNS id int PATH '@id') x`;
 		const actual = await generateCode({ type: 'pg', client }, sql, 'selectGenerateSeries', schemaInfo);
 
 		if (actual.isErr()) {

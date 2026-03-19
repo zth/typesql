@@ -1,0 +1,28 @@
+%%raw("async function selectJsonbToRecordset(client) {
+  const sql = `
+	SELECT * FROM jsonb_to_recordset('[{\"id\":1,\"name\":\"a\"}]') AS t(id int, name text)
+	`
+  return client.query({ text: sql, rowMode: 'array' })
+    .then((res) => res.rows.map((row) => mapArrayToSelectJsonbToRecordsetResult(row)))
+}
+
+function mapArrayToSelectJsonbToRecordsetResult(data) {
+  const result = {
+    id: data[0],
+    name: data[1],
+  }
+  return result
+}
+")
+
+type selectJsonbToRecordsetResult = {
+  id: Null.t<int>,
+  name: Null.t<string>
+}
+
+external selectJsonbToRecordset: (Pg.client) => promise<array<selectJsonbToRecordsetResult>> = "selectJsonbToRecordset"
+let run: (Pg.client) => promise<array<selectJsonbToRecordsetResult>> = (db) => {
+  selectJsonbToRecordset(db)
+}
+
+let default = run

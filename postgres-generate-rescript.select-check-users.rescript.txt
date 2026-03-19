@@ -1,0 +1,30 @@
+%%raw("async function selectCheckUsers(client) {
+  const sql = `
+	SELECT u.id, check_users.*
+	FROM users u
+	CROSS JOIN LATERAL check_users(u)
+	`
+  return client.query({ text: sql, rowMode: 'array' })
+    .then((res) => res.rows.map((row) => mapArrayToSelectCheckUsersResult(row)))
+}
+
+function mapArrayToSelectCheckUsersResult(data) {
+  const result = {
+    id: data[0],
+    user_ok: data[1],
+  }
+  return result
+}
+")
+
+type selectCheckUsersResult = {
+  id: int,
+  user_ok: bool
+}
+
+external selectCheckUsers: (Pg.client) => promise<array<selectCheckUsersResult>> = "selectCheckUsers"
+let run: (Pg.client) => promise<array<selectCheckUsersResult>> = (db) => {
+  selectCheckUsers(db)
+}
+
+let default = run
