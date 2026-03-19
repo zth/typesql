@@ -13,7 +13,7 @@ docker compose up -d mysql-dev postgres-dev
 npm run ci:setup-db
 ```
 
-SQLite fixture databases are committed in the repo as `mydb.db` and `users.db`. The setup script only resets MySQL and Postgres.
+SQLite fixture databases are generated locally as ignored files at `mydb.db` and `users.db`. `npm run ci:setup-db` rebuilds them alongside the MySQL and Postgres fixtures, and `npm run setup:sqlite-fixtures` rebuilds just the SQLite files.
 
 ## Common commands
 

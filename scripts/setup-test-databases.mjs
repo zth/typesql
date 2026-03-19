@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import Database from 'better-sqlite3';
 import mysql from 'mysql2/promise';
 import postgres from 'postgres';
 
@@ -15,10 +16,26 @@ const MYSQL_PASSWORD = process.env.TYPESQL_MYSQL_PASSWORD ?? 'password';
 const MYSQL_DATABASE = process.env.TYPESQL_MYSQL_DATABASE ?? 'mydb';
 
 const POSTGRES_URL = process.env.TYPESQL_POSTGRES_URL ?? 'postgres://postgres:password@127.0.0.1:5432/postgres';
+const SQLITE_FIXTURE_DB_PATH = path.join(repoRoot, 'mydb.db');
+const SQLITE_ATTACHED_DB_PATH = path.join(repoRoot, 'users.db');
+const sqliteOnly = process.argv.includes('--sqlite-only');
 
 async function main() {
+	await setupSqliteFixtures();
+	if (sqliteOnly) {
+		console.log('[setup-test-databases] sqlite fixtures are ready');
+		return;
+	}
+
 	await Promise.all([setupMySql(), setupPostgres()]);
-	console.log('[setup-test-databases] relational fixtures are ready');
+	console.log('[setup-test-databases] relational and sqlite fixtures are ready');
+}
+
+async function setupSqliteFixtures() {
+	await Promise.all([
+		setupSqliteDatabase(SQLITE_FIXTURE_DB_PATH, path.join(repoRoot, 'sqlite-migrations')),
+		setupSqliteDatabase(SQLITE_ATTACHED_DB_PATH, path.join(repoRoot, 'sqlite-attached-migrations'))
+	]);
 }
 
 async function setupMySql() {
@@ -46,6 +63,28 @@ async function setupMySql() {
 		}
 	} finally {
 		await connection.end();
+	}
+}
+
+async function setupSqliteDatabase(dbPath, migrationsDir) {
+	await fs.rm(dbPath, { force: true });
+	const db = new Database(dbPath);
+
+	try {
+		console.log(`[setup-test-databases] resetting SQLite database ${path.basename(dbPath)}`);
+
+		for (const filePath of await listMigrationFiles(migrationsDir)) {
+			const sql = await fs.readFile(filePath, 'utf8');
+			if (sql.trim() === '') {
+				continue;
+			}
+			console.log(
+				`[setup-test-databases] applying SQLite migration ${path.basename(filePath)} to ${path.basename(dbPath)}`
+			);
+			db.exec(sql);
+		}
+	} finally {
+		db.close();
 	}
 }
 
