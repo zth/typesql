@@ -3,15 +3,15 @@ import type { SQLiteDialect, SchemaDef, TypeSqlError } from '../../src/types';
 import { isLeft } from 'fp-ts/lib/Either';
 import { parseSql } from '../../src/sqlite-query-analyzer/parser';
 import { sqliteDbSchema } from '../mysql-query-analyzer/create-schema';
-import Database from 'better-sqlite3';
 import { validateAndGenerateCode } from '../../src/codegen/sqlite';
 import { loadDbSchema } from '../../src/sqlite-query-analyzer/query-executor';
+import { openTestSqliteDb } from '../fixture-paths';
 
 describe('sqlite-Test simple select statements', () => {
 	it('try to parse a empty query', async () => {
 		const client: SQLiteDialect = {
 			type: 'better-sqlite3',
-			client: new Database('./mydb.db')
+			client: openTestSqliteDb()
 		};
 		const sql = '';
 
@@ -28,7 +28,7 @@ describe('sqlite-Test simple select statements', () => {
 	it('try to parse a empty query', async () => {
 		const client: SQLiteDialect = {
 			type: 'better-sqlite3',
-			client: new Database('./mydb.db')
+			client: openTestSqliteDb()
 		};
 		const sql = 'SELECT id2 from mytable1';
 
@@ -2043,7 +2043,7 @@ describe('sqlite-Test simple select statements', () => {
 	});
 
 	it('multipleRowsResult for table with composite key', async () => {
-		const db = new Database('./mydb.db');
+		const db = openTestSqliteDb();
 		const dbSchemaResult = loadDbSchema(db);
 		if (dbSchemaResult.isErr()) {
 			assert.fail(`Shouldn't return an error`);
@@ -2080,7 +2080,7 @@ describe('sqlite-Test simple select statements', () => {
 	});
 
 	it('multipleRowsResult for table with composite key (all keys)', async () => {
-		const db = new Database('./mydb.db');
+		const db = openTestSqliteDb();
 		const dbSchemaResult = loadDbSchema(db);
 		if (dbSchemaResult.isErr()) {
 			assert.fail(`Shouldn't return an error`);
@@ -2117,7 +2117,7 @@ describe('sqlite-Test simple select statements', () => {
 	});
 
 	it('multipleRowsResult for table with composite key (all keys, with OR)', async () => {
-		const db = new Database('./mydb.db');
+		const db = openTestSqliteDb();
 		const dbSchemaResult = loadDbSchema(db);
 		if (dbSchemaResult.isErr()) {
 			assert.fail(`Shouldn't return an error`);

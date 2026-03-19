@@ -3,12 +3,12 @@ import assert from 'node:assert';
 import { loadCreateTableStmt, loadCreateTableStmtWithCheckConstraint, loadDbSchema } from '../../src/sqlite-query-analyzer/query-executor';
 import { isLeft } from 'fp-ts/lib/Either';
 import { sqliteDbSchema } from '../mysql-query-analyzer/create-schema';
-import Database from 'better-sqlite3';
 import type { ColumnSchema } from '../../src/mysql-query-analyzer/types';
+import { openTestSqliteDb, TEST_USERS_DB_PATH, toSqliteStringLiteral } from '../fixture-paths';
 
 describe('sqlite-query-executor', () => {
 	it('loadDbSchema - Type Affinity', async () => {
-		const db = new Database('./mydb.db');
+		const db = openTestSqliteDb();
 		const dbSchema = loadDbSchema(db);
 		if (dbSchema.isErr()) {
 			assert.fail(`Shouldn't return an error`);
@@ -20,7 +20,7 @@ describe('sqlite-query-executor', () => {
 	});
 
 	it('loadDbSchema - test composite primary', async () => {
-		const db = new Database('./mydb.db');
+		const db = openTestSqliteDb();
 		const dbSchema = loadDbSchema(db);
 		if (dbSchema.isErr()) {
 			assert.fail(`Shouldn't return an error`);
@@ -51,8 +51,8 @@ describe('sqlite-query-executor', () => {
 	});
 
 	it('loadDbSchema with attached database', async () => {
-		const db = new Database('./mydb.db');
-		db.exec(`attach database './users.db' as users`);
+		const db = openTestSqliteDb();
+		db.exec(`attach database '${toSqliteStringLiteral(TEST_USERS_DB_PATH)}' as users`);
 
 		const dbSchema = loadDbSchema(db);
 		if (dbSchema.isErr()) {
@@ -102,7 +102,7 @@ describe('sqlite-query-executor', () => {
 	});
 
 	it('loadDbSchema FTS', async () => {
-		const db = new Database('./mydb.db');
+		const db = openTestSqliteDb();
 
 		const dbSchema = loadDbSchema(db);
 		if (dbSchema.isErr()) {
@@ -161,7 +161,7 @@ describe('sqlite-query-executor', () => {
 	});
 
 	it('loadDbSchema - generated columns', async () => {
-		const db = new Database('./mydb.db');
+		const db = openTestSqliteDb();
 
 		const dbSchema = loadDbSchema(db);
 		if (dbSchema.isErr()) {
@@ -211,7 +211,7 @@ describe('sqlite-query-executor', () => {
 	});
 
 	it('loadDbSchema - json_each', async () => {
-		const db = new Database('./mydb.db');
+		const db = openTestSqliteDb();
 
 		const dbSchema = loadDbSchema(db);
 		if (dbSchema.isErr()) {
@@ -315,7 +315,7 @@ describe('sqlite-query-executor', () => {
 	});
 
 	it('loadCreateTableStmt', () => {
-		const db = new Database('./mydb.db');
+		const db = openTestSqliteDb();
 
 		const dbSchema = loadCreateTableStmt(db, 'mytable1');
 		if (isLeft(dbSchema)) {
@@ -331,7 +331,7 @@ describe('sqlite-query-executor', () => {
 	});
 
 	it('loadDbSchema - albums with non unique index', () => {
-		const db = new Database('./mydb.db');
+		const db = openTestSqliteDb();
 
 		const dbSchema = loadDbSchema(db);
 		if (dbSchema.isErr()) {
@@ -372,7 +372,7 @@ describe('sqlite-query-executor', () => {
 	});
 
 	it('loadCreateTableStmtWithCheckConstraint', () => {
-		const db = new Database('./mydb.db');
+		const db = openTestSqliteDb();
 
 		const queryResult = loadCreateTableStmtWithCheckConstraint(db);
 		if (queryResult.isErr()) {

@@ -4,11 +4,11 @@ import { parseSql } from '../../src/sqlite-query-analyzer/parser';
 import { sqliteDbSchema } from '../mysql-query-analyzer/create-schema';
 import type { RelationInfo2 } from '../../src/sqlite-query-analyzer/sqlite-describe-nested-query';
 import { loadDbSchema } from '../../src/sqlite-query-analyzer/query-executor';
-import Database from 'better-sqlite3';
 import type { TypeSqlError } from '../../src/types';
+import { openTestSqliteDb } from '../fixture-paths';
 
 describe('sqlite-nested-query', () => {
-	const db = new Database('./mydb.db');
+	const db = openTestSqliteDb();
 
 	it('SELECT FROM users u INNER JOIN posts p', () => {
 		const sql = `
@@ -866,7 +866,7 @@ describe('sqlite-nested-query', () => {
 			}
 		];
 
-		const chinookDb = new Database('./mydb.db');
+		const chinookDb = openTestSqliteDb();
 		const dbSchema = loadDbSchema(chinookDb);
 
 		if (dbSchema.isErr()) {

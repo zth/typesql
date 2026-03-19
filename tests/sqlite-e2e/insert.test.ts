@@ -1,9 +1,9 @@
 import assert from 'node:assert';
-import Database from 'better-sqlite3';
 import { insert03, Insert03Result } from './sql';
+import { openTestSqliteDb } from '../fixture-paths';
 
 describe('sqlite-insert', () => {
-	const db = new Database('./mydb.db');
+	const db = openTestSqliteDb();
 
 	it('insert03-returning *', async () => {
 

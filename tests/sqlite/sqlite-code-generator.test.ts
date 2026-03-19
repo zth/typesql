@@ -3,12 +3,12 @@ import assert from 'node:assert';
 import { readFileSync } from 'node:fs';
 import { generateCrud, generateTsCode } from '../../src/codegen/sqlite';
 import { sqliteDbSchema } from '../mysql-query-analyzer/create-schema';
-import Database from 'better-sqlite3';
 import { isLeft } from 'fp-ts/lib/Either';
 import { loadDbSchema } from '../../src/sqlite-query-analyzer/query-executor';
+import { openTestSqliteDb } from '../fixture-paths';
 
 describe('sqlite-code-generator', () => {
-	const db = new Database('./mydb.db');
+	const db = openTestSqliteDb();
 
 	it('select01 - select id, name from mytable2 where id = ?', async () => {
 		const sql = 'select id, name from mytable2 where id = ?';

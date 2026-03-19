@@ -2,13 +2,13 @@ import assert from 'node:assert';
 import type { SQLiteDialect, SchemaDef } from '../../src/types';
 import { isLeft } from 'fp-ts/lib/Either';
 import { parseSql } from '../../src/sqlite-query-analyzer/parser';
-import Database from 'better-sqlite3';
 import { loadDbSchema } from '../../src/sqlite-query-analyzer/query-executor';
+import { openTestSqliteDb } from '../fixture-paths';
 
 describe('sqlite-Test simple select statements', () => {
 	const client: SQLiteDialect = {
 		type: 'better-sqlite3',
-		client: new Database('./mydb.db')
+		client: openTestSqliteDb()
 	};
 	const dbSchemaResult = loadDbSchema(client.client);
 	if (dbSchemaResult.isErr()) {

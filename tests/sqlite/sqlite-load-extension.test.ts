@@ -7,15 +7,16 @@ import { createLibSqlClient } from '../../src/drivers/libsql';
 import { SchemaDef } from '../../src/types';
 import { parseSql } from '../../src/sqlite-query-analyzer/parser';
 import { sqliteDbSchema } from '../mysql-query-analyzer/create-schema';
+import { resolveTestPath, TEST_SQLITE_DB_PATH } from '../fixture-paths';
 
 function resolveUuidExtensionPath() {
 	switch (process.platform) {
 		case 'win32':
-			return path.resolve(process.cwd(), 'tests/ext/uuid.dll');
+			return resolveTestPath('ext', 'uuid.dll');
 		case 'darwin':
-			return path.resolve(process.cwd(), 'tests/ext/uuid.dylib');
+			return resolveTestPath('ext', 'uuid.dylib');
 		default:
-			return path.resolve(process.cwd(), 'tests/ext/uuid.so');
+			return resolveTestPath('ext', 'uuid.so');
 	}
 }
 
@@ -25,7 +26,7 @@ const maybeIt = fs.existsSync(uuidExtensionPath) ? it : it.skip;
 describe('load-extension', () => {
 	maybeIt('better-sqlite3 - load_extension uuid4', () => {
 
-		const client = createSqliteClient('better-sqlite3', './mydb.db', [], [uuidExtensionPath]);
+		const client = createSqliteClient('better-sqlite3', TEST_SQLITE_DB_PATH, [], [uuidExtensionPath]);
 		if (client.isErr()) {
 			assert.fail(`Shouldn't return an Error`);
 		}
@@ -44,7 +45,7 @@ describe('load-extension', () => {
 
 	maybeIt('bun:sqlite - load_extension uuid4', () => {
 
-		const client = createSqliteClient('bun:sqlite', './mydb.db', [], [uuidExtensionPath]);
+		const client = createSqliteClient('bun:sqlite', TEST_SQLITE_DB_PATH, [], [uuidExtensionPath]);
 		if (client.isErr()) {
 			assert.fail(`Shouldn't return an Error`);
 		}
@@ -63,7 +64,7 @@ describe('load-extension', () => {
 
 	maybeIt('libsql - load_extension uuid4', () => {
 
-		const client = createLibSqlClient('./mydb.db', [], [uuidExtensionPath], 'authtoken');
+		const client = createLibSqlClient(TEST_SQLITE_DB_PATH, [], [uuidExtensionPath], 'authtoken');
 		if (client.isErr()) {
 			assert.fail(`Shouldn't return an Error`);
 		}

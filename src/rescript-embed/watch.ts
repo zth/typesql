@@ -1,4 +1,4 @@
-import chokidar from 'chokidar';
+import chokidar, { type FSWatcher } from 'chokidar';
 import path from 'node:path';
 import { errorMessage } from '../cli-io';
 import type { RescriptContext } from '../rescript-cli/service';
@@ -25,18 +25,6 @@ export type WatchOperationQueue = {
 
 export async function watchRescriptEmbeds(context: RescriptContext) {
 	const rescriptConfig = resolveRescriptEmbedConfig(context.config);
-	const initialResult = await syncRescriptEmbeds(context);
-	printSyncSummary(initialResult.summary);
-	printSyncErrors(initialResult.errors);
-
-	const operationQueue = createWatchOperationQueue(
-		{
-			syncFile: (sourcePath) => syncChangedSourceFile(context, sourcePath),
-			removeFile: (sourcePath) => removeGeneratedSourceFile(context, sourcePath)
-		},
-		WATCH_EVENT_DEBOUNCE_MS
-	);
-
 	const watcher = chokidar.watch(rescriptConfig.include.map((pattern) => path.join(rescriptConfig.srcDir, pattern)), {
 		ignored: rescriptConfig.exclude.map((pattern) => path.join(rescriptConfig.srcDir, pattern)),
 		ignoreInitial: true,
@@ -44,6 +32,13 @@ export async function watchRescriptEmbeds(context: RescriptContext) {
 			stabilityThreshold: 100
 		}
 	});
+	const operationQueue = createWatchOperationQueue(
+		{
+			syncFile: (sourcePath) => syncChangedSourceFile(context, sourcePath),
+			removeFile: (sourcePath) => removeGeneratedSourceFile(context, sourcePath)
+		},
+		WATCH_EVENT_DEBOUNCE_MS
+	);
 
 	watcher.on('add', (sourcePath) => {
 		operationQueue.scheduleSync(sourcePath);
@@ -57,6 +52,12 @@ export async function watchRescriptEmbeds(context: RescriptContext) {
 	watcher.on('error', (error) => {
 		console.error(`Watch error: ${errorMessage(error)}`);
 	});
+
+	await waitForWatcherReady(watcher);
+
+	const initialResult = await syncRescriptEmbeds(context);
+	printSyncSummary(initialResult.summary);
+	printSyncErrors(initialResult.errors);
 
 	process.stdout.write(`watching ${rescriptConfig.srcDir}\n`);
 
@@ -97,6 +98,22 @@ export async function watchRescriptEmbeds(context: RescriptContext) {
 		process.once('SIGINT', handleSigint);
 		process.once('SIGTERM', handleSigterm);
 		watcher.once('error', handleWatcherError);
+	});
+}
+
+async function waitForWatcherReady(watcher: FSWatcher) {
+	await new Promise<void>((resolve, reject) => {
+		const handleReady = () => {
+			watcher.off('error', handleError);
+			resolve();
+		};
+		const handleError = (error: unknown) => {
+			watcher.off('ready', handleReady);
+			reject(error);
+		};
+
+		watcher.once('ready', handleReady);
+		watcher.once('error', handleError);
 	});
 }
 

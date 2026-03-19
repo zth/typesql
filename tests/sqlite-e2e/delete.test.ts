@@ -1,9 +1,9 @@
 import assert from 'node:assert';
-import Database from 'better-sqlite3';
 import { delete02, Delete02Result } from './sql';
+import { openTestSqliteDb } from '../fixture-paths';
 
 describe('sqlite-delete', () => {
-    const db = new Database('./mydb.db');
+    const db = openTestSqliteDb();
 
     it('delete02-returning *', async () => {
 

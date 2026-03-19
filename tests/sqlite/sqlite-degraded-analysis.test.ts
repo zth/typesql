@@ -1,13 +1,13 @@
 import assert from 'node:assert';
-import Database from 'better-sqlite3';
 import { isLeft } from 'fp-ts/lib/Either';
 import { validateAndGenerateCode } from '../../src/codegen/sqlite';
 import { parseSql } from '../../src/sqlite-query-analyzer/parser';
 import type { SQLiteDialect } from '../../src/types';
 import { sqliteDbSchema } from '../mysql-query-analyzer/create-schema';
+import { openTestSqliteDb } from '../fixture-paths';
 
 describe('sqlite-degraded-analysis', () => {
-	const db = new Database('./mydb.db');
+	const db = openTestSqliteDb();
 	const client: SQLiteDialect = {
 		type: 'better-sqlite3',
 		client: db
