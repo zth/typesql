@@ -1,4 +1,4 @@
-import pg from 'pg';
+import type pg from 'pg';
 
 export type SelectFromMytable1Params = {
 	id: number;

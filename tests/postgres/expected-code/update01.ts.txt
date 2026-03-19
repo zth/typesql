@@ -1,4 +1,4 @@
-import pg from 'pg';
+import type pg from 'pg';
 
 export type Update01Data = {
 	param1: number | null;

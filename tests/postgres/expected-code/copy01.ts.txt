@@ -1,4 +1,4 @@
-import pg from 'pg';
+import type pg from 'pg';
 import { from as copyFrom } from 'pg-copy-streams';
 import { pipeline } from 'stream/promises';
 import { Readable } from 'stream';

@@ -1,4 +1,4 @@
-import pg from 'pg';
+import type pg from 'pg';
 
 export type SelectJson02Result = {
 	sum: SelectJson02SumType;

@@ -1,4 +1,4 @@
-import pg from 'pg';
+import type pg from 'pg';
 
 export type SelectJsonBuildObject01Result = {
 	value1: SelectJsonBuildObject01Value1Type;

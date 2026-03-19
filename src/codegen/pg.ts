@@ -391,7 +391,7 @@ type ExecFunctionParameters = {
 
 const postgresCodeWriter: CodeWriter = {
 	writeImports: function (writer: CodeBlockWriter, queryType: QueryType): void {
-		writer.writeLine(`import pg from 'pg';`);
+		writer.writeLine(`import type pg from 'pg';`);
 		if (queryType === 'Copy') {
 			writer.writeLine(`import { from as copyFrom } from 'pg-copy-streams';`);
 			writer.writeLine(`import { pipeline } from 'stream/promises';`);
