@@ -1179,6 +1179,22 @@ export const builtinFunctions: PostgresBuiltinFunctionSchema[] = [
 	},
 	{
 		schema: 'pg_catalog',
+		function_name: 'generate_series',
+		identity_arguments: 'bigint, bigint',
+		return_type: 'SETOF bigint',
+		returns_set: true,
+		language: 'internal'
+	},
+	{
+		schema: 'pg_catalog',
+		function_name: 'generate_series',
+		identity_arguments: 'timestamp without time zone, timestamp without time zone, interval',
+		return_type: 'SETOF timestamp without time zone',
+		returns_set: true,
+		language: 'internal'
+	},
+	{
+		schema: 'pg_catalog',
 		function_name: 'unnest',
 		identity_arguments: 'anyarray',
 		return_type: 'SETOF anyelement',

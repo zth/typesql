@@ -40,7 +40,7 @@ export function parseSql(
 
 	return {
 		...traverseResult,
-		columns: traverseResult.columns.map(({ column_key: _, ...rest }) => rest)
+		columns: traverseResult.columns.map(({ column_key: _, record_type_name: __, record_type_schema: ___, ...rest }) => rest)
 	};
 }
 

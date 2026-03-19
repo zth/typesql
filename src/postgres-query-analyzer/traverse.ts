@@ -13,6 +13,7 @@ import { PostgresBuiltinFunctionSchema } from './builtin-functions';
 import { evaluatesTrueIfNull } from './case-nullability-checker';
 import { getOrderByColumns } from './util';
 import { findPostgresFunctionCandidates, resolvePostgresFunction, ResolvedFunctionMetadata, ResolvedTableColumn } from './function-resolution';
+import { classifyFunctionArgumentTypes } from './function-argument-classifier';
 
 export type NotNullInfo = {
 	schema: string;
@@ -25,6 +26,8 @@ export type NotNullInfo = {
 	type: PostgresSimpleType;
 	jsonType?: JsonType;
 	recordTypes?: NotNullInfo[];
+	record_type_name?: string;
+	record_type_schema?: string;
 }
 
 
@@ -1541,6 +1544,10 @@ function mapSumType(type: PostgresSimpleType): PostgresSimpleType {
 }
 
 function traversefunc_expr_common_subexpr(func_expr_common_subexpr: Func_expr_common_subexprContext, context: TraverseContext, traverseResult: TraverseResult): NotNullInfo {
+	const sqlValueFunction = getSqlValueFunctionInfo(func_expr_common_subexpr);
+	if (sqlValueFunction) {
+		return sqlValueFunction;
+	}
 	if (func_expr_common_subexpr.COALESCE() || func_expr_common_subexpr.GREATEST() || func_expr_common_subexpr.LEAST()) {
 		const func_arg_list = func_expr_common_subexpr.expr_list().a_expr_list();
 		const result = func_arg_list.map(func_arg_expr => {
@@ -1574,6 +1581,35 @@ function traversefunc_expr_common_subexpr(func_expr_common_subexpr: Func_expr_co
 		table: '',
 		schema: '',
 		type: 'unknown'
+	};
+}
+
+function getSqlValueFunctionInfo(func_expr_common_subexpr: Func_expr_common_subexprContext): NotNullInfo | null {
+	if (func_expr_common_subexpr.CURRENT_DATE()) {
+		return createSqlValueFunctionColumn('current_date', 'date');
+	}
+	if (func_expr_common_subexpr.CURRENT_TIME()) {
+		return createSqlValueFunctionColumn('current_time', 'timetz');
+	}
+	if (func_expr_common_subexpr.CURRENT_TIMESTAMP()) {
+		return createSqlValueFunctionColumn('current_timestamp', 'timestamptz');
+	}
+	if (func_expr_common_subexpr.LOCALTIME()) {
+		return createSqlValueFunctionColumn('localtime', 'time');
+	}
+	if (func_expr_common_subexpr.LOCALTIMESTAMP()) {
+		return createSqlValueFunctionColumn('localtimestamp', 'timestamp');
+	}
+	return null;
+}
+
+function createSqlValueFunctionColumn(columnName: string, type: PostgresSimpleType): NotNullInfo {
+	return {
+		column_name: columnName,
+		is_nullable: false,
+		table: '',
+		schema: '',
+		type
 	};
 }
 
@@ -1709,9 +1745,23 @@ type FunctionTableAliasInfo = {
 }
 
 function getFromColumns(tableName: TableName, withColumns: NotNullInfo[], dbSchema: PostgresColumnSchema[]) {
-	const filteredWithColumns = withColumns.filter(col => col.table.toLowerCase() === tableName.name.toLowerCase());
-	const filteredSchema = filteredWithColumns.length > 0 ? filteredWithColumns : dbSchema.filter(col => col.table.toLowerCase() === tableName.name.toLowerCase());
-	return filteredSchema;
+	const filteredWithColumns = filterColumnsForTableName(withColumns, tableName);
+	if (filteredWithColumns.length > 0) {
+		return filteredWithColumns;
+	}
+	return filterColumnsForTableName(dbSchema, tableName);
+}
+
+function filterColumnsForTableName<T extends { table: string; schema: string }>(columns: T[], tableName: TableName): T[] {
+	const tableMatches = columns.filter(col => col.table.toLowerCase() === tableName.name.toLowerCase());
+	if (tableName.schema) {
+		return tableMatches.filter(col => col.schema.toLowerCase() === tableName.schema.toLowerCase());
+	}
+	if (tableMatches.length <= 1) {
+		return tableMatches;
+	}
+	const preferredSchema = tableMatches.find(col => col.schema.toLowerCase() === 'public')?.schema || tableMatches[0].schema;
+	return tableMatches.filter(col => col.schema === preferredSchema);
 }
 
 
@@ -1766,9 +1816,14 @@ function traverse_table_ref(table_ref: Table_refContext, context: TraverseContex
 	let singleRow = false;
 	if (relation_expr) {
 		const tableName = traverse_relation_expr(relation_expr);
-		const fromColumns = getFromColumns(tableName, context.fromColumns.concat(context.withColumns), context.dbSchema);
-		const tableNameWithAlias = alias ? alias : tableName.name;
-		const fromColumnsResult = fromColumns.map(col => ({ ...col, table: tableNameWithAlias.toLowerCase() } satisfies NotNullInfo));
+			const fromColumns = getFromColumns(tableName, context.fromColumns.concat(context.withColumns), context.dbSchema);
+			const tableNameWithAlias = alias ? alias : tableName.name;
+			const fromColumnsResult = fromColumns.map(col => ({
+				...col,
+				table: tableNameWithAlias.toLowerCase(),
+				record_type_name: ('record_type_name' in col ? col.record_type_name : undefined) || col.table,
+				record_type_schema: ('record_type_schema' in col ? col.record_type_schema : undefined) || col.schema
+			} satisfies NotNullInfo));
 		allColumns.push(...fromColumnsResult);
 		singleRow = false;
 
@@ -2047,7 +2102,18 @@ function traverse_func_expr_windowless(func_expr_windowless: Func_expr_windowles
 	if (func_application) {
 		const func_name = splitName(func_application.func_name().getText().toLowerCase());
 		const func_arg_expr_list = func_application.func_arg_list()?.func_arg_expr_list() || [];
-		const resolution = resolvePostgresFunction({ schema: func_name.prefix || undefined, name: func_name.name }, context.userFunctions, context.builtinFunctions);
+		const functionRef = { schema: func_name.prefix || undefined, name: func_name.name };
+		const candidates = findPostgresFunctionCandidates(functionRef, context.userFunctions, context.builtinFunctions);
+		if (candidates.length === 1) {
+			if (candidates[0].origin === 'builtin') {
+				func_arg_expr_list.forEach(func_arg_expr => {
+					traversefunc_arg_expr(func_arg_expr, context, traverseResult);
+				});
+			}
+			return traverseResolvedFunctionTable(candidates[0], context, traverseResult, aliasInfo);
+		}
+			const argumentTypes = candidates.length > 1 ? classifyFunctionArgumentTypes(func_arg_expr_list, getVisibleFunctionArgumentColumns(context)) : [];
+		const resolution = resolvePostgresFunction(functionRef, context.userFunctions, context.builtinFunctions, argumentTypes);
 		if (resolution.status === 'resolved') {
 			if (resolution.value.origin === 'builtin') {
 				func_arg_expr_list.forEach(func_arg_expr => {
@@ -2056,8 +2122,6 @@ function traverse_func_expr_windowless(func_expr_windowless: Func_expr_windowles
 			}
 			return traverseResolvedFunctionTable(resolution.value, context, traverseResult, aliasInfo);
 		}
-
-		const candidates = findPostgresFunctionCandidates({ schema: func_name.prefix || undefined, name: func_name.name }, context.userFunctions, context.builtinFunctions);
 		func_arg_expr_list.forEach(func_arg_expr => {
 			traversefunc_arg_expr(func_arg_expr, context, traverseResult);
 		});
@@ -2163,10 +2227,11 @@ function resolveFunctionTableColumns(functionInfo: ResolvedFunctionMetadata, dbS
 
 function resolveNamedFunctionRelationColumns(typeName: string, dbSchema: PostgresColumnSchema[]): NotNullInfo[] {
 	const relation = splitName(typeName.toLowerCase());
-	const columns = dbSchema.filter(col =>
-		col.table.toLowerCase() === relation.name
-		&& (relation.prefix === '' || col.schema.toLowerCase() === relation.prefix)
-	);
+	const columns = filterColumnsForTableName(dbSchema, {
+		name: relation.name,
+		alias: '',
+		schema: relation.prefix
+	});
 	return columns.map(col => ({ ...col } satisfies NotNullInfo));
 }
 
@@ -2242,6 +2307,10 @@ function mapFunctionReturnTypeToPostgresType(typeName: string): PostgresSimpleTy
 	}
 }
 
+function getVisibleFunctionArgumentColumns(context: TraverseContext) {
+	return context.fromColumns.concat(context.parentColumns);
+}
+
 function traverse_relation_expr(relation_expr: Relation_exprContext): TableName {
 	const qualified_name = relation_expr.qualified_name();
 	const name = traverse_qualified_name(qualified_name);
@@ -2256,12 +2325,14 @@ function traverse_qualified_name(qualified_name: Qualified_nameContext): TableNa
 		const indirection_text = get_indiretion_text(indirection);
 		return {
 			name: indirection_text,
-			alias: colid_name
+			alias: '',
+			schema: colid_name
 		}
 	}
 	return {
 		name: colid_name,
-		alias: ''
+		alias: '',
+		schema: ''
 	}
 }
 
@@ -2831,6 +2902,7 @@ function hasFunction(simple_select_pramary: Simple_select_pramaryContext, checkF
 type TableName = {
 	name: string;
 	alias: string;
+	schema: string;
 }
 
 function getTableName(table_ref: Table_refContext): TableName {
@@ -2841,7 +2913,8 @@ function getTableName(table_ref: Table_refContext): TableName {
 	const aliasClause = table_ref.alias_clause()
 	return {
 		name: aliasClause.colid().getText(),
-		alias: ''
+		alias: '',
+		schema: ''
 	}
 }
 type CheckFunctionF = (func_expr: Func_exprContext) => boolean;
@@ -2917,11 +2990,21 @@ function isAggregateFunction(func_expr: Func_exprContext): boolean {
 // WHERE p.proretset = true
 // ORDER BY function_name;
 function isSetReturningFunction(func_expr: Func_exprContext, context: TraverseContext): boolean {
-	const functionName = func_expr?.func_application()?.func_name()?.getText()?.toLowerCase();
+	const funcApplication = func_expr?.func_application();
+	const functionName = funcApplication?.func_name()?.getText()?.toLowerCase();
 	if (functionName) {
 		const splitFunctionName = splitName(functionName);
-		const candidates = findPostgresFunctionCandidates({ schema: splitFunctionName.prefix || undefined, name: splitFunctionName.name }, context.userFunctions, context.builtinFunctions);
+		const functionRef = { schema: splitFunctionName.prefix || undefined, name: splitFunctionName.name };
+		const candidates = findPostgresFunctionCandidates(functionRef, context.userFunctions, context.builtinFunctions);
+		if (candidates.length === 1) {
+			return candidates[0].returnType.returnsSet;
+		}
 		if (candidates.length > 0) {
+				const argumentTypes = classifyFunctionArgumentTypes(funcApplication?.func_arg_list()?.func_arg_expr_list() || [], getVisibleFunctionArgumentColumns(context));
+			const resolution = resolvePostgresFunction(functionRef, context.userFunctions, context.builtinFunctions, argumentTypes);
+			if (resolution.status === 'resolved') {
+				return resolution.value.returnType.returnsSet;
+			}
 			return candidates.some(candidate => candidate.returnType.returnsSet);
 		}
 	}

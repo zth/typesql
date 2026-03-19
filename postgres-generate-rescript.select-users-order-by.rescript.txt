@@ -15,7 +15,7 @@ function mapArrayToSelectUsersResult(data) {
   return result
 }
 
-const orderByColumns = ['users.id', 'name', 'email', 'username', 'password', 'schema1_field1']
+const orderByColumns = ['id', 'name', 'email']
 
 function buildOrderBy(orderBy) {
   if (!Array.isArray(orderBy) || orderBy.length === 0) {
@@ -47,7 +47,7 @@ and selectUsersResult = {
   email: Null.t<string>
 }
 and selectUsersOrderBy = {
-  column: [#"users.id" | #"name" | #"email" | #"username" | #"password" | #"schema1_field1"],
+  column: [#"id" | #"name" | #"email"],
   direction: [#"asc" | #"desc"]
 }
 

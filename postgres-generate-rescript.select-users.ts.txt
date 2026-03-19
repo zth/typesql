@@ -1,4 +1,4 @@
-import pg from 'pg';
+import type pg from 'pg';
 
 export type SelectUsersParams = {
 	id: int;
@@ -11,7 +11,7 @@ export type SelectUsersResult = {
 	email: string | null;
 	bool_expr: bool;
 	date_expr: Date;
-	datetime_expr: Date | null;
+	datetime_expr: Date;
 }
 
 export async function selectUsers(client: pg.Client | pg.Pool | pg.PoolClient, params: SelectUsersParams): Promise<SelectUsersResult | null> {
@@ -29,7 +29,7 @@ function mapArrayToSelectUsersResult(data: any) {
 		email: data[2],
 		bool_expr: data[3],
 		date_expr: new Date(data[4]),
-		datetime_expr: data[5] != null ? new Date(data[5]) : data[5]
+		datetime_expr: new Date(data[5])
 	}
 	return result;
 }

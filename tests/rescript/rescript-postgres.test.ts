@@ -214,6 +214,26 @@ AND m2.descr = :description`;
 		assert.equal(rescript, fs.readFileSync('postgres-generate-rescript.select-generate-series-from.rescript.txt', 'utf8'));
 	});
 
+	it('generates code for bigint generate_series function tables', async () => {
+		const sql = 'SELECT * FROM generate_series(1::bigint, 5::bigint) AS g';
+
+		const queryName = 'selectGenerateSeriesBigintFrom';
+		const { rescript, originalTs } = await generateReScriptFromPostgres({
+			sql,
+			queryName,
+			isCrudFile: false,
+			databaseClient,
+			schemaInfo
+		});
+
+		if (WRITE_FILES) {
+			fs.writeFileSync('postgres-generate-rescript.select-generate-series-bigint-from.rescript.txt', rescript);
+			fs.writeFileSync('postgres-generate-rescript.select-generate-series-bigint-from.ts.txt', originalTs);
+		}
+
+		assert.equal(rescript, fs.readFileSync('postgres-generate-rescript.select-generate-series-bigint-from.rescript.txt', 'utf8'));
+	});
+
 	it('generates code for unnest function tables with alias columns', async () => {
 		const sql = 'SELECT * FROM unnest(ARRAY[1, 2, 3]) AS t(id)';
 

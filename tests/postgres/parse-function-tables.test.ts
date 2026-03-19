@@ -61,6 +61,56 @@ describe('postgres-function-tables', () => {
 		assert.deepStrictEqual(actual.value, expected);
 	});
 
+	it('SELECT * FROM generate_series(1::bigint, 5::bigint) AS g(value)', async () => {
+		const sql = 'SELECT * FROM generate_series(1::bigint, 5::bigint) AS g(value)';
+		const actual = await describeQuery(client, sql, schemaInfo);
+		const expected: PostgresSchemaDef = {
+			sql,
+			queryType: 'Select',
+			multipleRowsResult: true,
+			columns: [
+				{
+					name: 'value',
+					type: 'int8',
+					notNull: false,
+					table: 'g'
+				}
+			],
+			parameters: []
+		};
+
+		if (actual.isErr()) {
+			assert.fail(`Shouldn't return an error: ${actual.error.description}`);
+		}
+
+		assert.deepStrictEqual(actual.value, expected);
+	});
+
+	it('SELECT * FROM generate_series(timestamp, timestamp, interval) AS g(value)', async () => {
+		const sql = `SELECT * FROM generate_series('2024-01-01'::timestamp, '2024-01-03'::timestamp, '1 day'::interval) AS g(value)`;
+		const actual = await describeQuery(client, sql, schemaInfo);
+		const expected: PostgresSchemaDef = {
+			sql,
+			queryType: 'Select',
+			multipleRowsResult: true,
+			columns: [
+				{
+					name: 'value',
+					type: 'timestamp',
+					notNull: false,
+					table: 'g'
+				}
+			],
+			parameters: []
+		};
+
+		if (actual.isErr()) {
+			assert.fail(`Shouldn't return an error: ${actual.error.description}`);
+		}
+
+		assert.deepStrictEqual(actual.value, expected);
+	});
+
 	it('SELECT * FROM unnest(ARRAY[1,2,3]) AS t(id)', async () => {
 		const sql = 'SELECT * FROM unnest(ARRAY[1, 2, 3]) AS t(id)';
 		const actual = await describeQuery(client, sql, schemaInfo);

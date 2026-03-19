@@ -156,6 +156,133 @@ describe('postgres-function-resolution', () => {
 		assert.strictEqual(actual.candidates.length, 2);
 	});
 
+	it('resolves builtin overloads from concrete argument types', () => {
+		const builtinFunctions: PostgresBuiltinFunctionSchema[] = [
+			{
+				schema: 'pg_catalog',
+				function_name: 'generate_series',
+				identity_arguments: 'integer, integer',
+				return_type: 'SETOF integer',
+				returns_set: true,
+				language: 'internal'
+			},
+			{
+				schema: 'pg_catalog',
+				function_name: 'generate_series',
+				identity_arguments: 'bigint, bigint',
+				return_type: 'SETOF bigint',
+				returns_set: true,
+				language: 'internal'
+			},
+			{
+				schema: 'pg_catalog',
+				function_name: 'generate_series',
+				identity_arguments: 'timestamp without time zone, timestamp without time zone, interval',
+				return_type: 'SETOF timestamp without time zone',
+				returns_set: true,
+				language: 'internal'
+			}
+		];
+
+		const bigintResolution = resolvePostgresFunction({ name: 'generate_series' }, [], builtinFunctions, ['int8', 'int8']);
+		assert.strictEqual(bigintResolution.status, 'resolved');
+		if (bigintResolution.status !== 'resolved') {
+			assert.fail('Expected resolved bigint overload');
+		}
+		assert.strictEqual(bigintResolution.value.returnType.kind, 'named');
+		if (bigintResolution.value.returnType.kind !== 'named') {
+			assert.fail('Expected named return type');
+		}
+		assert.strictEqual(bigintResolution.value.returnType.typeName, 'bigint');
+
+		const timestampResolution = resolvePostgresFunction({ name: 'generate_series' }, [], builtinFunctions, ['timestamp', 'timestamp', 'interval']);
+		assert.strictEqual(timestampResolution.status, 'resolved');
+		if (timestampResolution.status !== 'resolved') {
+			assert.fail('Expected resolved timestamp overload');
+		}
+		assert.strictEqual(timestampResolution.value.returnType.kind, 'named');
+		if (timestampResolution.value.returnType.kind !== 'named') {
+			assert.fail('Expected named return type');
+		}
+		assert.strictEqual(timestampResolution.value.returnType.typeName, 'timestamp without time zone');
+	});
+
+	it('resolves anyarray builtins from array argument types', () => {
+		const builtinFunctions: PostgresBuiltinFunctionSchema[] = [
+			{
+				schema: 'pg_catalog',
+				function_name: 'unnest',
+				identity_arguments: 'anyarray',
+				return_type: 'SETOF anyelement',
+				returns_set: true,
+				language: 'internal'
+			}
+		];
+
+		const actual = resolvePostgresFunction({ name: 'unnest' }, [], builtinFunctions, ['int4[]']);
+		assert.strictEqual(actual.status, 'resolved');
+		if (actual.status !== 'resolved') {
+			assert.fail('Expected resolved function');
+		}
+		assert.strictEqual(actual.value.functionName, 'unnest');
+	});
+
+	it('resolves overloaded user-defined functions from argument types', () => {
+		const userFunctions: UserFunctionSchema[] = [
+			{
+				schema: 'public',
+				function_name: 'lookup_value',
+				arguments: 'id integer',
+				return_type: 'TABLE(id integer)',
+				definition: 'select 1',
+				language: 'sql'
+			},
+			{
+				schema: 'public',
+				function_name: 'lookup_value',
+				arguments: 'slug text',
+				return_type: 'TABLE(slug text)',
+				definition: 'select 1',
+				language: 'sql'
+			}
+		];
+
+		const actual = resolvePostgresFunction({ schema: 'public', name: 'lookup_value' }, userFunctions, [], ['int4']);
+		assert.strictEqual(actual.status, 'resolved');
+		if (actual.status !== 'resolved') {
+			assert.fail('Expected resolved function');
+		}
+		assert.strictEqual(actual.value.identityArguments, 'id integer');
+	});
+
+	it('resolves overloaded composite user-defined functions from record argument types', () => {
+		const userFunctions: UserFunctionSchema[] = [
+			{
+				schema: 'public',
+				function_name: 'lookup_entity',
+				arguments: 'u users',
+				return_type: 'TABLE(source text)',
+				definition: 'select 1',
+				language: 'sql'
+			},
+			{
+				schema: 'public',
+				function_name: 'lookup_entity',
+				arguments: 'c clients',
+				return_type: 'TABLE(source text)',
+				definition: 'select 1',
+				language: 'sql'
+			}
+		];
+
+		const actual = resolvePostgresFunction({ schema: 'public', name: 'lookup_entity' }, userFunctions, [], ['public.users']);
+		assert.strictEqual(actual.status, 'resolved');
+		if (actual.status !== 'resolved') {
+			assert.fail('Expected resolved function');
+		}
+		assert.strictEqual(actual.value.identityArguments, 'u users');
+	});
+
 	it('reports unresolved when no function matches', () => {
 		const actual = resolvePostgresFunction({ name: 'missing_function' }, [], []);
 		assert.deepStrictEqual(actual, { status: 'unresolved' });
