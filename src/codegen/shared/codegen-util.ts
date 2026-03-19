@@ -1,4 +1,5 @@
 import CodeBlockWriter from 'code-block-writer';
+import type { AnalysisInfo } from '../../analysis-types';
 import { CamelCaseName, QueryType, TsFieldDescriptor, TsParameterDescriptor } from '../../types';
 import { DynamicSqlInfoResult, DynamicSqlInfoResult2, SelectFragmentResult } from '../../mysql-query-analyzer/types';
 import { EOL } from 'os';
@@ -19,6 +20,7 @@ export type TsDescriptor = {
 	nestedDescriptor2?: RelationType2[];
 	dynamicQuery?: DynamicSqlInfoResult;
 	dynamicQuery2?: DynamicSqlInfoResult2;
+	analysis?: AnalysisInfo;
 };
 
 export type ParamInfo = {
@@ -44,6 +46,15 @@ export function createCodeBlockWriter() {
 		newLine: EOL as '\n' | '\r\n'
 	});
 	return writer;
+}
+
+export function writeAnalysisWarning(writer: CodeBlockWriter, analysis?: AnalysisInfo) {
+	if (analysis == null || analysis.mode === 'full') {
+		return;
+	}
+	writer.writeLine('// TypeSQL generated this file in degraded analysis mode.');
+	writer.writeLine('// Exact nullability and advanced analysis metadata were unavailable for this query.');
+	writer.blankLine();
 }
 
 export function capitalize(name: CamelCaseName) {

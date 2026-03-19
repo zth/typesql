@@ -68,3 +68,11 @@ export function replaceOrderByPlaceholderWithBuildOrderBy(sql: string): string {
 		return `${originalOrderBy}\${buildOrderBy(params.orderBy)}`;
 	});
 }
+
+export function replaceOrderByPlaceholderWithConstant(sql: string): string {
+	const pattern = /(order\s+by\s+)\/\*__orderByPlaceholder__\*\/\s+1/i;
+
+	return sql.replace(pattern, (_, originalOrderBy) => {
+		return `${originalOrderBy}1`;
+	});
+}

@@ -86,7 +86,7 @@ export type FieldName = {
 
 export type ColumnInfo = {
 	name: string;
-	type: DbType | '?';
+	type: DbType | '?' | 'any';
 	notNull: boolean;
 	intrinsicNotNull?: boolean;
 	table?: string;

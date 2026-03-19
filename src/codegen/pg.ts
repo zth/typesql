@@ -1,5 +1,5 @@
 import CodeBlockWriter from 'code-block-writer';
-import { capitalize, convertToCamelCaseName, generateRelationType, removeDuplicatedParameters2, renameInvalidNames, TsDescriptor, writeNestedTypes, writeCollectFunction, writeGroupByFunction, createTypeNames, createCodeBlockWriter, writeDynamicQueryParamType, writeSelectFragements } from './shared/codegen-util';
+import { capitalize, convertToCamelCaseName, generateRelationType, removeDuplicatedParameters2, renameInvalidNames, TsDescriptor, writeNestedTypes, writeCollectFunction, writeGroupByFunction, createTypeNames, createCodeBlockWriter, writeDynamicQueryParamType, writeSelectFragements, writeAnalysisWarning } from './shared/codegen-util';
 import { CrudQueryType, PgDielect, QueryType, TsFieldDescriptor, TsParameterDescriptor, TypeSqlError } from '../types';
 import { describeQuery } from '../postgres-query-analyzer/describe';
 import { mapper } from '../dialects/postgres';
@@ -56,6 +56,7 @@ function generateTsCode(queryName: string, schemaDef: PostgresSchemaDef, client:
 	const generateOrderBy = tsDescriptor.orderByColumns != null && tsDescriptor.orderByColumns.length > 0;
 
 	const codeWriter = getCodeWriter(client);
+	writeAnalysisWarning(writer, tsDescriptor.analysis);
 	codeWriter.writeImports(writer, schemaDef.queryType);
 	if (tsDescriptor.dynamicQuery2) {
 		writer.writeLine(`import { EOL } from 'os';`);
@@ -281,7 +282,8 @@ function createTsDescriptor(capitalizedName: string, schemaDef: PostgresSchemaDe
 		queryType: schemaDef.queryType,
 		multipleRowsResult: schemaDef.multipleRowsResult,
 		parameterNames: [],
-		data: schemaDef.data?.map(param => mapParameterToTsFieldDescriptor(param))
+		data: schemaDef.data?.map(param => mapParameterToTsFieldDescriptor(param)),
+		analysis: schemaDef.analysis
 	}
 	if (schemaDef.orderByColumns) {
 		tsDescriptor.orderByColumns = schemaDef.orderByColumns;

@@ -7,15 +7,17 @@
 		"typesql": "cli.js"
 	},
 	"scripts": {
-		"build": "tsc",
+		"clean": "shx rm -rf dist",
+		"build": "npm run clean && tsc",
 		"watch": "tsc -w",
+		"pretest": "npm run build",
 		"test": "mocha --enable-source-maps dist/tests/**/*.js",
 		"test:rescript": "mocha --enable-source-maps dist/tests/rescript/*.js",
 		"test:watch": "mocha --enable-source-maps dist/tests/**/*.js --watch --watch-files **/*.js",
 		"test:rescript:watch": "mocha --enable-source-maps dist/tests/rescript/*.js --watch --watch-files dist/tests/rescript/**/*.js",
 		"antlr4ts": "antlr4ts -Xexact-output-dir -o ./parser/ ./grammar/*.g4",
-		"dist": "tsc && shx cp ./package.json ./README.md ./dist/src && cd ./dist/src && npm publish",
-		"dist-exp": "tsc && shx cp ./package.json ./README.md ./dist/src && cd ./dist/src && npm publish --tag experimental",
+		"dist": "npm run build && shx cp ./package.json ./README.md ./dist/src && cd ./dist/src && npm publish",
+		"dist-exp": "npm run build && shx cp ./package.json ./README.md ./dist/src && cd ./dist/src && npm publish --tag experimental",
 		"gen": "node ./dist/src/cli.js compile",
 		"gen-pg": "node ./dist/src/cli.js --config ./tests/postgres-e2e/typesql.json compile"
 	},

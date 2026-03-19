@@ -8,6 +8,7 @@ import type { Pool } from 'mysql2/promise';
 import type { RelationInfo2 } from './sqlite-query-analyzer/sqlite-describe-nested-query';
 import type { Database as LibSQLDatabase } from 'libsql';
 import { Sql } from 'postgres';
+import type { AnalysisInfo } from './analysis-types';
 
 export type DBSchema = {
 	columns: ColumnSchema[];
@@ -36,6 +37,7 @@ export type SchemaDef = {
 	dynamicSqlQuery?: DynamicSqlInfoResult;
 	dynamicSqlQuery2?: DynamicSqlInfoResult2;
 	nestedInfo?: RelationInfo2[];
+	analysis?: AnalysisInfo;
 };
 
 export type FieldNullability = {
@@ -53,7 +55,7 @@ export type ColumnDef2 = {
 
 export type ParameterDef = {
 	name: string;
-	columnType: DbType;
+	columnType: DbType | 'any';
 	notNull: boolean;
 	list?: boolean; //id in (?)
 };

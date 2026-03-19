@@ -18,6 +18,7 @@ import { indexGroupBy } from '../util';
 import { replaceListParams } from './replace-list-params';
 import type { TraverseResult2 } from '../mysql-query-analyzer/traverse';
 import { describeDynamicQuery2 } from '../describe-dynamic-query';
+import { createDegradedSchemaDefinition, type NativeSqliteDatabase } from './degraded-analysis';
 
 type ParseAndTraverseResult = {
 	traverseResult: TraverseResult2;
@@ -28,7 +29,19 @@ type ParseAndTraverseResult = {
 };
 
 export function traverseSql(sql: string, dbSchema: ColumnSchema[]): Either<TypeSqlError, ParseAndTraverseResult> {
-	const { sql: processedSql, namedParameters } = preprocessSql(sql, 'sqlite');
+	let processedSql: string;
+	let namedParameters: { paramName: string; paramNumber: number }[];
+	try {
+		const preprocessed = preprocessSql(sql, 'sqlite');
+		processedSql = preprocessed.sql;
+		namedParameters = preprocessed.namedParameters;
+	} catch (error) {
+		const err = error as Error;
+		return left({
+			name: 'Invalid SQL',
+			description: err.message
+		});
+	}
 	const nested = hasAnnotation(sql, '@nested');
 	const dynamicQuery = hasAnnotation(sql, '@dynamicQuery');
 	const parser = parseSqlite(processedSql);
@@ -47,13 +60,17 @@ export function traverseSql(sql: string, dbSchema: ColumnSchema[]): Either<TypeS
 	return right(result);
 }
 
-export function parseSql(sql: string, dbSchema: ColumnSchema[]): Either<TypeSqlError, SchemaDef> {
+export function parseSql(sql: string, dbSchema: ColumnSchema[], db?: NativeSqliteDatabase): Either<TypeSqlError, SchemaDef> {
 	const parseAndTraverseResult = traverseSql(sql, dbSchema);
 	if (isLeft(parseAndTraverseResult)) {
-		return parseAndTraverseResult;
+		return db != null ? createDegradedSchemaDefinition(sql, dbSchema, db, parseAndTraverseResult.left) : parseAndTraverseResult;
 	}
 	const { traverseResult, processedSql, namedParameters, nested, dynamicQuery } = parseAndTraverseResult.right;
-	return createSchemaDefinition(processedSql, traverseResult, namedParameters, nested, dynamicQuery);
+	const schemaDef = createSchemaDefinition(processedSql, traverseResult, namedParameters, nested, dynamicQuery);
+	if (isLeft(schemaDef) && db != null) {
+		return createDegradedSchemaDefinition(sql, dbSchema, db, schemaDef.left);
+	}
+	return schemaDef;
 }
 
 function traverseQuery(sql_stmtContext: Sql_stmtContext, dbSchema: ColumnSchema[]) {
