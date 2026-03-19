@@ -12,7 +12,11 @@ describe('postgres-code-generator', () => {
 		type: 'pg',
 		client
 	}
-	const schemaInfo = createSchemaInfo();
+	let schemaInfo: Awaited<ReturnType<typeof createSchemaInfo>>;
+
+	before(async () => {
+		schemaInfo = await createSchemaInfo(client);
+	});
 
 	after(async () => {
 		await client.end();

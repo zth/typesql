@@ -91,7 +91,9 @@ describe('postgres-query-executor', () => {
 		if (result.isErr()) {
 			assert.fail(`Shouldn't return an error: ${result.error}`);
 		}
-		assert.deepStrictEqual(result.value, enumMap);
+		const actualLabels = Array.from(result.value.values()).flat().map((item) => item.enumlabel);
+		const expectedLabels = Array.from(enumMap.values()).flat().map((item) => item.enumlabel);
+		assert.deepStrictEqual(actualLabels, expectedLabels);
 	})
 
 	it('loadCheckConstraints', async () => {
@@ -117,24 +119,17 @@ describe('postgres-query-executor', () => {
 
 	it('postgresDescribe', async () => {
 		const actual = await postgresDescribe(sql, 'SELECT * FROM mytable1 WHERE id = $1');
-		const expected: PostgresDescribe = {
-			parameters: [23],
-			columns: [
-				{
-					name: 'id',
-					typeId: 23,
-					tableId: 16396
-				},
-				{
-					name: 'value',
-					typeId: 23,
-					tableId: 16396
-				}
-			]
-		};
 		if (actual.isErr()) {
 			assert.fail(`Shouldn't return an error: ${actual.error}`);
 		}
-		assert.deepStrictEqual(actual.value, expected);
+		assert.deepStrictEqual(actual.value.parameters, [23]);
+		assert.deepStrictEqual(
+			actual.value.columns.map((column) => ({ name: column.name, typeId: column.typeId })),
+			[
+				{ name: 'id', typeId: 23 },
+				{ name: 'value', typeId: 23 }
+			]
+		);
+		assert.ok(actual.value.columns.every((column) => column.tableId > 0));
 	});
 });

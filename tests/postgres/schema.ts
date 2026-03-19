@@ -2,7 +2,7 @@ import { CheckConstraintResult, EnumMap, EnumResult } from '../../src/drivers/po
 import { PostgresColumnSchema } from '../../src/drivers/types';
 import { UserFunctionSchema } from '../../src/postgres-query-analyzer/types';
 import { PostgresBuiltinFunctionSchema } from '../../src/postgres-query-analyzer/builtin-functions';
-import { PostgresSchemaInfo } from '../../src/schema-info';
+import { loadSchemaInfo, PostgresSchemaInfo } from '../../src/schema-info';
 import postgres from 'postgres';
 
 export const schema: PostgresColumnSchema[] = [
@@ -1219,17 +1219,15 @@ export const builtinFunctions: PostgresBuiltinFunctionSchema[] = [
 	}
 ]
 
-export function createSchemaInfo(): PostgresSchemaInfo {
-	const schemaInfo: PostgresSchemaInfo = {
-		kind: 'pg',
-		columns: schema,
-		foreignKeys: [],
-		userFunctions,
-		builtinFunctions,
-		enumTypes: enumMap,
-		checkConstraints
+export async function createSchemaInfo(client: ReturnType<typeof createTestClient>): Promise<PostgresSchemaInfo> {
+	const schemaInfoResult = await loadSchemaInfo({
+		type: 'pg',
+		client
+	});
+	if (schemaInfoResult.isErr()) {
+		throw new Error(schemaInfoResult.error.description);
 	}
-	return schemaInfo;
+	return schemaInfoResult.value as PostgresSchemaInfo;
 }
 
 export function createTestClient() {

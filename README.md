@@ -1,210 +1,166 @@
-## TypeSQL
+# rescript-typesql
 
-**TypeSQL** generates typesafe Typescript APIs from your SQL statements. Write your queries in raw SQL and TypeSQL generates the type-safe APIs to execute those queries.
+> `rescript-typesql` is a long-term fork of `typesql` that is being steered toward a ReScript-first workflow.
 
-Access your database directly without a heavy ORM, gain effortless type-safety, and make maintaining your SQL simple.
+## What it does
 
-TypeSQL supports multiple SQL database backends:
+- Generates typed query helpers from raw SQL.
+- Supports direct ReScript generation from SQL strings.
+- Supports embedded-query workflows for ReScript projects.
+- Keeps SQL as the source of truth instead of pushing you into an ORM DSL.
+- Infers parameter types, result types, nullability, nested result structure, and dynamic query metadata.
 
-##### PostgreSQL (Experimental)
+## Supported database clients
 
-- [pg](https://www.npmjs.com/package/pg) - PostgreSQL client for node.js.
+- PostgreSQL via `pg`
+- MySQL via `mysql2`
+- SQLite via `better-sqlite3`
+- SQLite-compatible libSQL via `libsql`
+- SQLite-compatible D1 via `d1`
+- SQLite via `bun:sqlite`
 
-##### MySQL
+## Install
 
-- [mysql2](https://www.npmjs.com/package/mysql2) - the standard driver for mysql in NodeJS
+Install it as a project dependency and run the CLI through `npx`:
 
-##### SQLite
+```sh
+npm install --save-dev rescript-typesql
+```
 
-- [better-sqlite3](https://www.npmjs.com/package/better-sqlite3) - the fastest SQLite driver for NodeJS
-- [bun:sqlite](https://bun.sh/docs/api/sqlite) - Bun's official high-performance SQLite driver
+The package installs the `typesql` binary:
 
-##### LibSQL
+```sh
+npx typesql --help
+```
 
-- [libsql](https://www.npmjs.com/package/libsql) - the NodeJS driver for libSQL, the open-source fork of SQLite powering [Turso](https://turso.tech/)
+If you are using the embedded ReScript flow, you will usually also want:
 
-##### Cloudflare D1
+```sh
+npm install --save-dev rescript rescript-embed-lang
+```
 
-- [@cloudflare/d1](https://developers.cloudflare.com/d1/) - Serverless SQLite-compatible database from Cloudflare.
+## Quick start
 
-## Example
+Create a `typesql.json` file:
 
-Having the following query in `select-products.sql` file.
+```json
+{
+	"databaseUri": "./mydb.db",
+	"sqlDir": "./sql",
+	"client": "better-sqlite3",
+	"includeCrudTables": [],
+	"rescript": {
+		"srcDir": "./src",
+		"outDir": "./src/__generated__"
+	}
+}
+```
+
+Configuration notes:
+
+- `client` can be `pg`, `mysql2`, `better-sqlite3`, `libsql`, `bun:sqlite`, or `d1`.
+- `authToken` is used only for `libsql`.
+- `schemas` is optional for Postgres and defaults to `["public"]`.
+- `databaseUri` and `authToken` support `${ENV_VAR}` substitution.
+- Use `--env-file .env` to load env vars before config resolution.
+
+Add some SQL:
 
 ```sql
 SELECT
   id,
-  product_name,
-  list_price
-FROM products
-WHERE discontinued = 0
-  AND list_price BETWEEN :minPrice AND :maxPrice
+  name
+FROM users
+WHERE id = :id
 ```
 
-TypeSQL will generate the types and function in the file `select-products.ts`.
-Then you can import the generate code and execute as following:
-
-deno syntax:
-
-![](typesql-deno.gif)
-
-## Some features:
-
-- **Do not restrict the use of SQL** You dont need to learn any new query language, you can use SQL with all its power and expressiveness.
-
-- **Infer parameters and columns types.** `SELECT DATEDIFF(:date1, :date2) as days_stayed` will resolve the `date1` and `date2` parameters to the type `Date` and the function return type as `number`.
-
-- **Infer parameter and column nullability.** The nullable database column `email` will generate a nullable field for the query `SELECT email FROM mytable`, but will generate a non-nullable field for the query `SELECT email FROM mytable WHERE email is not null`;
-
-- **Infer the query return type (single row vs multiple rows).** If the `id` is a primary key or unique key, then function for the query `SELECT * FROM Books where id = :id` will return `Book|null`, instead of `Book[]`. The same is true for filters with LIMIT 1;
-
-- Allow the use of **dynamic ORDER BY** with auto-completion and compile-time verification. See [here](/docs/orderBy_limit.md).
-
-## Usage
-
-1. _npm install -g typesql-cli_
-
-2. Add the `typesql.json` configuration file in project root folder. You can generate an template with cli command `typesql init`. The client option can be: 'pg', 'mysql2', 'better-sqlite3', 'libsql', 'bun:sqlite' or 'd1'. The `authToken` configuration is used only for the libsql client.
-
-```json
-{
-	"databaseUri": "mysql://root:password@localhost/mydb",
-	"sqlDir": "./sqls",
-	"client": "mysql2",
-	"authToken": "authtoken",
-	"includeCrudTables": []
-}
-```
-
-You can use environment variables in `typesql.json` with the `${VAR_NAME}` syntax for `databaseUri` and `authToken`.
-To load variables from a `.env` file, pass the `--env-file` flag:
+Then either generate TypeScript files beside your SQL:
 
 ```sh
-typesql --env-file=.env compile
+npx typesql compile --config ./typesql.json
 ```
 
-3. Write your queries in the folder specified in the configuration file. You can also use the cli to scaffold the queries.
-
-```
-sqls\
-    select-products.sql
-    insert-product.sql
-    update-product.sql
-```
-
-4. Then run `typesql compile --watch` to start typesql in watch mode. After that you will have one Typescript file for each query file.
-
-```
-sqls\
-    select-products.sql
-    select-products.ts
-    insert-product.sql
-    insert-product.ts
-    update-product.sql
-    update-product.ts
-```
-
-5. Now you can import and use the generated code.
-
-```
-const products = await selectProducts(...
-
-const updateResult = await updateProduct(...
-```
-
-## Examples
-
-[Query scaffolding](/docs/query_scaffolding.md)
-
-[INSERT](/docs/insert.md)
-
-[IN/NOT IN Clause](/docs/in_clause.md)
-
-[MySQL FUNCTIONS](/docs/functions.md)
-
-[ORDER BY and LIMIT clauses](/docs/orderBy_limit.md)
-
-[LIKE](/docs/like.md)
-
-[Nested Query Result](/docs/nested-query-result.md)
-
-## ReScript generation from a SQL string
-
-Generate ReScript output directly from a SQL string using the CLI. The output is printed to stdout.
-
-- With a command-line string:
+Or generate ReScript for a single query directly:
 
 ```sh
-typesql rescript --name selectUsers --sql "select id, name from users"
+npx typesql rescript generate --config ./typesql.json --name selectUser --sql "select id, name from users where id = :id"
 ```
 
-- From stdin (piped):
+## ReScript workflow
+
+The ReScript command family is the part of the project that this fork is optimizing for.
+
+Core commands:
+
+- `typesql rescript generate` generates ReScript for a single SQL string.
+- `typesql rescript check` returns the expected variable shape for a query.
+- `typesql rescript inspect` resolves executable SQL and bind values.
+- `typesql rescript explain` runs `EXPLAIN` or `EXPLAIN ANALYZE` for a resolved query.
+- `typesql rescript exec` executes a query with explicit variables.
+- `typesql rescript sync` extracts `%generated.typesql` embeds and writes `__typesql.res` files.
+- `typesql rescript watch` keeps generated embed files in sync while you edit.
+- `typesql rescript daemon` starts a long-lived process for editor or tooling integrations.
+
+Generate from stdin:
 
 ```sh
-echo "select id, name from users" | typesql rescript --name selectUsers
+echo "select id, name from users where id = :id" | npx typesql rescript generate --config ./typesql.json --name selectUser
 ```
 
-- With explicit config and env file:
+Inspect resolved SQL:
 
 ```sh
-typesql --config ./path/to/typesql.json --env-file .env rescript --name selectUsers --sql "select * from users"
+npx typesql rescript inspect --config ./typesql.json --name selectUser --sql "select id, name from users where id = :id" --vars '{"id":1}'
 ```
 
-Notes:
-
-- `--name` is required and determines the logical query name used for generated types/functions.
-- If `--sql` is omitted, the CLI reads SQL from stdin when piped.
-- The database client and schema are resolved from your `typesql.json`.
-
-### SQLite prepared statement caching
-
-For SQLite ReScript generation (`better-sqlite3` and `bun:sqlite`), TypeSQL caches prepared statements internally for generated queries whose SQL text is static. This is done inside the generated JavaScript embedded in the ReScript module, so the public ReScript API does not change.
-
-- The cache is scoped per database instance, so repeated calls on the same `db` reuse the prepared statement.
-- This applies to static generated query files, including regular `SELECT`/`INSERT`/`UPDATE`/`DELETE` queries and nested-query helpers when the SQL text is fixed.
-- `@dynamicQuery` and other cases where the final SQL text can change per call are not cached. That includes patterns such as dynamic `ORDER BY` and list expansion like `IN (:ids)`.
-- Generated CRUD helpers are also not cached yet.
-
-## Daemon mode (IPC / stdio)
-
-Run a long-lived process that reads the config and connects to the database once, then serves on-demand requests to generate ReScript. This avoids repeated startup/connection costs.
-
-Start with a Unix socket (default `/tmp/typesql.sock`):
+Sync embedded queries:
 
 ```sh
-typesql daemon --config ./typesql.json
+npx typesql rescript sync --config ./typesql.json
 ```
 
-Or use stdio (NDJSON lines):
+Watch embedded queries:
 
 ```sh
-typesql daemon --stdio --config ./typesql.json
+npx typesql rescript watch --config ./typesql.json
 ```
 
-Request/response format (NDJSON, one JSON per line):
+## TypeScript generation
 
-Request:
+The legacy `compile` flow remains available and still generates `.ts` files from `.sql` files:
 
-```json
-{ "action": "rescript", "name": "selectUsers", "sql": "select id, name from users" }
+```sh
+npx typesql compile --config ./typesql.json
+npx typesql compile --watch --config ./typesql.json
 ```
 
-Successful response:
+This is still useful for compatibility and as an intermediate representation, but it is not the long-term product focus of this fork.
 
-```json
-{ "ok": true, "action": "rescript", "name": "selectUsers", "rescript": "...", "originalTs": "..." }
-```
+## Notable behavior
 
-Shutdown the daemon:
+- Raw SQL stays the source of truth.
+- Nullability is inferred from query structure when possible.
+- Unique-key and `LIMIT 1` cases can narrow result cardinality.
+- Dynamic query support includes typed `ORDER BY` and list expansion.
+- SQLite ReScript generation caches static prepared statements per database instance.
 
-```json
-{ "action": "shutdown" }
-```
+## Project direction
 
-Using the Unix socket (`/tmp/typesql.sock`), send the same NDJSON lines to the socket and read responses line-by-line. The daemon will remain running until it receives `shutdown` or the process is terminated.
+- This fork is intended to diverge from upstream.
+- ReScript support is the strategic focus.
+- TypeScript support can change if that is what the ReScript path needs.
+- Expect active iteration rather than strict compatibility guarantees.
 
-## Project Status: Under Active Development
+## Development
 
-**WARNING:** This is a work-in-progress experimental project. It is under active development and its API might change.
+Development notes and local CI setup live in [`DEVELOPMENT.md`](https://github.com/zth/typesql/blob/main/DEVELOPMENT.md).
 
-Issues reports and feature requests are welcome.
+## Additional docs
+
+- [Query scaffolding](https://github.com/zth/typesql/blob/main/docs/query_scaffolding.md)
+- [INSERT](https://github.com/zth/typesql/blob/main/docs/insert.md)
+- [IN / NOT IN](https://github.com/zth/typesql/blob/main/docs/in_clause.md)
+- [MySQL functions](https://github.com/zth/typesql/blob/main/docs/functions.md)
+- [ORDER BY and LIMIT](https://github.com/zth/typesql/blob/main/docs/orderBy_limit.md)
+- [LIKE](https://github.com/zth/typesql/blob/main/docs/like.md)
+- [Nested query results](https://github.com/zth/typesql/blob/main/docs/nested-query-result.md)
