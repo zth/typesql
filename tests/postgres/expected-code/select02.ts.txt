@@ -1,7 +1,7 @@
 import type pg from 'pg';
 
 export type Select02Result = {
-	id: number;
+	id: int;
 }
 
 export async function select02(client: pg.Client | pg.Pool | pg.PoolClient): Promise<Select02Result[]> {

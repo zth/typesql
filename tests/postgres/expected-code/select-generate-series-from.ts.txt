@@ -1,7 +1,7 @@
 import type pg from 'pg';
 
 export type SelectGenerateSeriesFromResult = {
-	g: number | null;
+	g: int | null;
 }
 
 export async function selectGenerateSeriesFrom(client: pg.Client | pg.Pool | pg.PoolClient): Promise<SelectGenerateSeriesFromResult[]> {

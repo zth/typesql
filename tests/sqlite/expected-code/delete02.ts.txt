@@ -1,12 +1,12 @@
 import type { Database } from 'better-sqlite3';
 
 export type Delete02Params = {
-	param1: number;
+	param1: int;
 }
 
 export type Delete02Result = {
-	id: number;
-	value?: number;
+	id: int;
+	value?: int;
 }
 
 export function delete02(db: Database, params: Delete02Params): Delete02Result {

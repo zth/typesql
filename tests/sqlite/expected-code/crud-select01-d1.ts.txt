@@ -1,12 +1,12 @@
 import type { D1Database } from '@cloudflare/workers-types';
 
 export type SelectFromMytable1Params = {
-	id: number;
+	id: int;
 }
 
 export type SelectFromMytable1Result = {
-	id: number;
-	value?: number;
+	id: int;
+	value?: int;
 }
 
 export async function selectFromMytable1(db: D1Database, params: SelectFromMytable1Params): Promise<SelectFromMytable1Result | null> {

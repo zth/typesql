@@ -6,11 +6,11 @@ export type UpdateMytable2Data = {
 }
 
 export type UpdateMytable2Params = {
-	id: number;
+	id: int;
 }
 
 export type UpdateMytable2Result = {
-	id: number;
+	id: int;
 	name: string | null;
 	descr: string | null;
 }

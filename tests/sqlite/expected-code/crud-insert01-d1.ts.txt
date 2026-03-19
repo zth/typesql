@@ -1,8 +1,8 @@
 import type { D1Database } from '@cloudflare/workers-types';
 
 export type InsertIntoMytable1Params = {
-	id?: number;
-	value?: number | null;
+	id?: int;
+	value?: int | null;
 }
 
 export type InsertIntoMytable1Result = {

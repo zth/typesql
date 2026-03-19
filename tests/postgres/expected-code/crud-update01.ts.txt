@@ -1,16 +1,16 @@
 import type pg from 'pg';
 
 export type UpdateMytable1Data = {
-	value?: number | null;
+	value?: int | null;
 }
 
 export type UpdateMytable1Params = {
-	id: number;
+	id: int;
 }
 
 export type UpdateMytable1Result = {
-	id: number;
-	value: number | null;
+	id: int;
+	value: int | null;
 }
 
 export async function updateMytable1(client: pg.Client | pg.Pool | pg.PoolClient, data: UpdateMytable1Data, params: UpdateMytable1Params): Promise<UpdateMytable1Result | null> {

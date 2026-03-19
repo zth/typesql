@@ -12,9 +12,9 @@ export type DynamicQuery09Params = {
 }
 
 export type DynamicQuery09Result = {
-	id?: number;
-	double_value?: number;
-	likename?: boolean;
+	id?: int;
+	double_value?: float;
+	likename?: bool;
 }
 
 export type DynamicQuery09Select = {
@@ -35,15 +35,15 @@ type SetOperator = 'IN' | 'NOT IN';
 type BetweenOperator = 'BETWEEN';
 
 export type DynamicQuery09Where =
-	| { column: 'id'; op: NumericOperator; value: number | null }
-	| { column: 'id'; op: SetOperator; value: number[] }
-	| { column: 'id'; op: BetweenOperator; value: [number | null, number | null] }
-	| { column: 'double_value'; op: NumericOperator; value: number | null }
-	| { column: 'double_value'; op: SetOperator; value: number[] }
-	| { column: 'double_value'; op: BetweenOperator; value: [number | null, number | null] }
-	| { column: 'likename'; op: NumericOperator; value: boolean | null }
-	| { column: 'likename'; op: SetOperator; value: boolean[] }
-	| { column: 'likename'; op: BetweenOperator; value: [boolean | null, boolean | null] }
+	| { column: 'id'; op: NumericOperator; value: int | null }
+	| { column: 'id'; op: SetOperator; value: int[] }
+	| { column: 'id'; op: BetweenOperator; value: [int | null, int | null] }
+	| { column: 'double_value'; op: NumericOperator; value: float | null }
+	| { column: 'double_value'; op: SetOperator; value: float[] }
+	| { column: 'double_value'; op: BetweenOperator; value: [float | null, float | null] }
+	| { column: 'likename'; op: NumericOperator; value: bool | null }
+	| { column: 'likename'; op: SetOperator; value: bool[] }
+	| { column: 'likename'; op: BetweenOperator; value: [bool | null, bool | null] }
 
 export async function dynamicQuery09(client: pg.Client | pg.Pool | pg.PoolClient, params?: DynamicQuery09DynamicParams): Promise<DynamicQuery09Result[]> {
 

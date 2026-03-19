@@ -9,7 +9,7 @@ export type Select04Result = {
 	text_column?: string;
 	date_text?: Date;
 	datetime_text?: Date;
-	integer_column?: number;
+	integer_column?: int;
 	date_integer?: Date;
 	datetime_integer?: Date;
 }

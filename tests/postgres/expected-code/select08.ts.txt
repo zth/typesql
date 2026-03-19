@@ -1,14 +1,14 @@
 import type pg from 'pg';
 
 export type Select08Params = {
-	param1: boolean;
-	param2: boolean | null;
+	param1: bool;
+	param2: bool | null;
 }
 
 export type Select08Result = {
-	id: number;
-	param1: boolean;
-	param2: boolean;
+	id: int;
+	param1: bool;
+	param2: bool;
 }
 
 export async function select08(client: pg.Client | pg.Pool | pg.PoolClient, params: Select08Params): Promise<Select08Result[]> {
@@ -27,8 +27,8 @@ export async function select08(client: pg.Client | pg.Pool | pg.PoolClient, para
 function mapArrayToSelect08Result(data: any) {
 	const result: Select08Result = {
 		id: data[0],
-		param1: data[1] != null ? Boolean(data[1]) : data[1],
-		param2: data[2] != null ? Boolean(data[2]) : data[2]
+		param1: data[1],
+		param2: data[2]
 	}
 	return result;
 }

@@ -5,8 +5,8 @@ export type SelectJson04Result = {
 }
 
 export type SelectJson04ResultType = {
-	id: number;
-	list: (number | string)[];
+	id: int;
+	list: (int | string)[];
 }
 
 export async function selectJson04(client: pg.Client | pg.Pool | pg.PoolClient): Promise<SelectJson04Result | null> {

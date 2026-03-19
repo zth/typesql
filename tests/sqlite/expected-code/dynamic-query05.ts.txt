@@ -7,7 +7,7 @@ export type CteDynamicParams = {
 }
 
 export type CteResult = {
-	id?: number;
+	id?: int;
 	name?: string;
 }
 
@@ -28,9 +28,9 @@ type SetOperator = 'IN' | 'NOT IN';
 type BetweenOperator = 'BETWEEN';
 
 export type CteWhere =
-	| { column: 'id'; op: NumericOperator; value: number | null }
-	| { column: 'id'; op: SetOperator; value: number[] }
-	| { column: 'id'; op: BetweenOperator; value: [number | null, number | null] }
+	| { column: 'id'; op: NumericOperator; value: int | null }
+	| { column: 'id'; op: SetOperator; value: int[] }
+	| { column: 'id'; op: BetweenOperator; value: [int | null, int | null] }
 	| { column: 'name'; op: StringOperator; value: string | null }
 	| { column: 'name'; op: SetOperator; value: string[] }
 	| { column: 'name'; op: BetweenOperator; value: [string | null, string | null] }

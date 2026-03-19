@@ -1,7 +1,7 @@
 import type pg from 'pg';
 
 export type SelectUnnestFromResult = {
-	id: number | null;
+	id: int | null;
 }
 
 export async function selectUnnestFrom(client: pg.Client | pg.Pool | pg.PoolClient): Promise<SelectUnnestFromResult[]> {

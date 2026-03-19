@@ -6,7 +6,7 @@ import { Readable } from 'stream';
 export type Copy02Params = {
 	id: string;
 	name: string | null;
-	year: number | null;
+	year: int | null;
 }
 
 const columns = ['id', 'name', 'year'] as const;

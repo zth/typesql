@@ -1,11 +1,11 @@
 import type { Client, Transaction } from '@libsql/client';
 
 export type Select01Params = {
-	param1: number;
+	param1: int;
 }
 
 export type Select01Result = {
-	id: number;
+	id: int;
 	name?: string;
 }
 

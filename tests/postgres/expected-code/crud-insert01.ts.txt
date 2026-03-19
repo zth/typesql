@@ -1,12 +1,12 @@
 import type pg from 'pg';
 
 export type InsertIntoMytable1Params = {
-	value: number | null;
+	value: int | null;
 }
 
 export type InsertIntoMytable1Result = {
-	id: number;
-	value: number | null;
+	id: int;
+	value: int | null;
 }
 
 export async function insertIntoMytable1(client: pg.Client | pg.Pool | pg.PoolClient, params: InsertIntoMytable1Params): Promise<InsertIntoMytable1Result | null> {

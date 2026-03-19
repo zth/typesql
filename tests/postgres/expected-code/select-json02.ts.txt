@@ -5,15 +5,15 @@ export type SelectJson02Result = {
 }
 
 export type SelectJson02SumType = {
-	total: string | null;
-	count: string;
-	coalesce: number;
+	total: bigint | null;
+	count: bigint;
+	coalesce: int;
 	nested: SelectJson02SumNestedType[];
 }
 
 export type SelectJson02SumNestedType = {
 	key1: string;
-	key2: number;
+	key2: int;
 }
 
 export async function selectJson02(client: pg.Client | pg.Pool | pg.PoolClient): Promise<SelectJson02Result[]> {

@@ -1,9 +1,9 @@
 import type { Database } from 'bun:sqlite';
 
 export type Nested03Result = {
-	surveyId: number;
+	surveyId: int;
 	surveyName: string;
-	userId: number;
+	userId: int;
 	userName: string;
 }
 
@@ -35,13 +35,13 @@ function mapArrayToNested03Result(data: any) {
 }
 
 export type Nested03NestedSurveys = {
-	surveyId: number;
+	surveyId: int;
 	surveyName: string;
 	users: Nested03NestedUsers[];
 }
 
 export type Nested03NestedUsers = {
-	userId: number;
+	userId: int;
 	userName: string;
 }
 

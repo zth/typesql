@@ -1,13 +1,13 @@
 import type pg from 'pg';
 
 export type Select06Params = {
-	ids: number[];
+	ids: int[];
 	names: string[];
 	name: string;
 }
 
 export type Select06Result = {
-	id: number;
+	id: int;
 }
 
 export async function select06(client: pg.Client | pg.Pool | pg.PoolClient, params: Select06Params): Promise<Select06Result[]> {

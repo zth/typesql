@@ -1,17 +1,17 @@
 import type pg from 'pg';
 
 export type UpdateMytable3Data = {
-	double_value?: number | null;
+	double_value?: float | null;
 	name?: string;
 }
 
 export type UpdateMytable3Params = {
-	id: number;
+	id: int;
 }
 
 export type UpdateMytable3Result = {
-	id: number;
-	double_value: number | null;
+	id: int;
+	double_value: float | null;
 	name: string;
 }
 

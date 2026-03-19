@@ -1,20 +1,20 @@
 import type pg from 'pg';
 
 export type Nested03Result = {
-	surveyid: number;
+	surveyid: int;
 	surveyname: string;
-	userid: number;
+	userid: int;
 	username: string;
 }
 
 export type Nested03NestedSurveys = {
-	surveyid: number;
+	surveyid: int;
 	surveyname: string;
 	users: Nested03NestedUsers[];
 }
 
 export type Nested03NestedUsers = {
-	userid: number;
+	userid: int;
 	username: string;
 }
 

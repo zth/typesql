@@ -5,13 +5,13 @@ export type SelectJson11Result = {
 }
 
 export type SelectJson11JsonAggType = {
-	id: number;
-	value: number | null;
+	id: int;
+	value: int | null;
 	subquery: SelectJson11JsonAggSubqueryType | null;
 }
 
 export type SelectJson11JsonAggSubqueryType = {
-	key: number;
+	key: int;
 }
 
 export async function selectJson11(client: pg.Client | pg.Pool | pg.PoolClient): Promise<SelectJson11Result | null> {

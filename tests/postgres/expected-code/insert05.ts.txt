@@ -2,7 +2,7 @@ import type pg from 'pg';
 
 export type Insert05Params = {
 	role: string;
-	fk_user: number;
+	fk_user: int;
 }
 
 export type Insert05Result = {

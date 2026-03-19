@@ -1,12 +1,12 @@
 import type { Database } from 'better-sqlite3';
 
 export type Select06Params = {
-	ids: number[];
+	ids: int[];
 	names: string[];
 }
 
 export type Select06Result = {
-	id: number;
+	id: int;
 }
 
 export function select06(db: Database, params: Select06Params): Select06Result[] {

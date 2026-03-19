@@ -2,13 +2,13 @@ import type pg from 'pg';
 
 export type InsertIntoRolesParams = {
 	role?: string;
-	fk_user: number;
+	fk_user: int;
 }
 
 export type InsertIntoRolesResult = {
-	id: number;
+	id: int;
 	role: string;
-	fk_user: number;
+	fk_user: int;
 }
 
 export async function insertIntoRoles(client: pg.Client | pg.Pool | pg.PoolClient, params: InsertIntoRolesParams): Promise<InsertIntoRolesResult | null> {

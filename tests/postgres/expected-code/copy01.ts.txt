@@ -4,7 +4,7 @@ import { pipeline } from 'stream/promises';
 import { Readable } from 'stream';
 
 export type Copy01Params = {
-	value: number | null;
+	value: int | null;
 }
 
 const columns = ['value'] as const;

@@ -1,7 +1,7 @@
 import type { Client, Transaction } from '@libsql/client';
 
 export type Select02Result = {
-	id: number;
+	id: int;
 }
 
 export async function select02(client: Client | Transaction): Promise<Select02Result[]> {

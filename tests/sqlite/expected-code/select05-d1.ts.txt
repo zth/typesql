@@ -5,7 +5,7 @@ export type Select05Params = {
 }
 
 export type Select05Result = {
-	id: number;
+	id: int;
 }
 
 export async function select05(db: D1Database, params: Select05Params): Promise<Select05Result[]> {

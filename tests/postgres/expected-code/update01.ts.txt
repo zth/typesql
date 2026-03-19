@@ -1,11 +1,11 @@
 import type pg from 'pg';
 
 export type Update01Data = {
-	param1: number | null;
+	param1: int | null;
 }
 
 export type Update01Params = {
-	param2: number;
+	param2: int;
 }
 
 export type Update01Result = {
