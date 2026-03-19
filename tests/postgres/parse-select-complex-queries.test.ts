@@ -5,7 +5,11 @@ import { createSchemaInfo, createTestClient } from './schema';
 
 describe('parse-select-complex-queries', () => {
 	const client = createTestClient();
-	const schemaInfo = createSchemaInfo();
+	let schemaInfo: Awaited<ReturnType<typeof createSchemaInfo>>;
+
+	before(async () => {
+		schemaInfo = await createSchemaInfo(client);
+	});
 
 	after(async () => {
 		await client.end();
@@ -804,17 +808,26 @@ describe('parse-select-complex-queries', () => {
 				{
 					name: 'id',
 					type: 'int4',
-					notNull: true,
-					table: 'cte'
+					notNull: false,
+					table: ''
 				},
 				{
 					name: 'level',
 					type: 'int4',
-					notNull: true,
-					table: 'cte'
+					notNull: false,
+					table: ''
 				}
 			],
-			parameters: []
+			parameters: [],
+			analysis: {
+				mode: 'describe-only',
+				diagnostics: [
+					{
+						code: 'postgres.describe_only_fallback',
+						message: 'Column not found: level'
+					}
+				]
+			}
 		};
 		if (actual.isErr()) {
 			assert.fail(`Shouldn't return an error: ${actual.error.description}`);

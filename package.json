@@ -1,23 +1,64 @@
 {
-	"name": "typesql-cli",
+	"name": "rescript-typesql",
 	"version": "0.22.0",
-	"description": "",
-	"main": "index.js",
+	"description": "ReScript-first SQL code generation and query tooling for PostgreSQL, MySQL, SQLite, libSQL, and D1.",
+	"main": "./dist/src/index.js",
+	"types": "./dist/src/index.d.ts",
 	"bin": {
-		"typesql": "cli.js"
+		"typesql": "./dist/src/cli.js"
 	},
+	"exports": {
+		".": {
+			"types": "./dist/src/index.d.ts",
+			"default": "./dist/src/index.js"
+		},
+		"./package.json": "./package.json"
+	},
+	"files": [
+		"dist/src/**",
+		"README.md",
+		"LICENSE"
+	],
 	"scripts": {
-		"build": "tsc -w",
-		"test": "mocha --enable-source-maps dist/tests/**/*.js --watch --watch-files **/*.js",
+		"clean": "shx rm -rf dist",
+		"build": "npm run clean && tsc",
+		"watch": "tsc -w",
+		"pretest": "npm run build",
+		"setup:sqlite-fixtures": "node ./scripts/setup-test-databases.mjs --sqlite-only",
+		"test": "npm run setup:sqlite-fixtures && mocha --enable-source-maps dist/tests/**/*.js",
+		"test:built": "npm run setup:sqlite-fixtures && mocha --exit --enable-source-maps dist/tests/**/*.js",
+		"test:rescript": "npm run setup:sqlite-fixtures && mocha --enable-source-maps dist/tests/rescript/*.js",
+		"test:rescript:built": "npm run setup:sqlite-fixtures && mocha --exit --enable-source-maps dist/tests/rescript/*.js",
+		"test:watch": "mocha --enable-source-maps dist/tests/**/*.js --watch --watch-files **/*.js",
+		"test:rescript:watch": "mocha --enable-source-maps dist/tests/rescript/*.js --watch --watch-files dist/tests/rescript/**/*.js",
 		"antlr4ts": "antlr4ts -Xexact-output-dir -o ./parser/ ./grammar/*.g4",
-		"dist": "tsc && shx cp ./package.json ./README.md ./dist/src && cd ./dist/src && npm publish",
-		"dist-exp": "tsc && shx cp ./package.json ./README.md ./dist/src && cd ./dist/src && npm publish --tag experimental",
+		"ci:setup-db": "node ./scripts/setup-test-databases.mjs",
+		"pack:dry-run": "npm pack --dry-run",
+		"prepack": "npm run build",
 		"gen": "node ./dist/src/cli.js compile",
 		"gen-pg": "node ./dist/src/cli.js --config ./tests/postgres-e2e/typesql.json compile"
 	},
-	"keywords": [],
-	"author": "",
+	"keywords": [
+		"rescript",
+		"sql",
+		"postgresql",
+		"mysql",
+		"sqlite",
+		"libsql",
+		"d1",
+		"codegen",
+		"cli"
+	],
+	"author": "zth",
 	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/zth/typesql.git"
+	},
+	"bugs": {
+		"url": "https://github.com/zth/typesql/issues"
+	},
+	"homepage": "https://github.com/zth/typesql#readme",
 	"publishConfig": {
 		"access": "public"
 	},
@@ -35,6 +76,8 @@
 		"pg": "^8.16.3",
 		"pg-copy-streams": "^6.0.6",
 		"prettier": "^3.6.2",
+		"rescript": "^12.2.0",
+		"rescript-embed-lang": "^0.5.5",
 		"shx": "^0.3.4",
 		"ts-node": "^10.9.2",
 		"typescript": "^5.9.2"
@@ -46,6 +89,7 @@
 		"chokidar": "^3.6.0",
 		"code-block-writer": "^13.0.3",
 		"dotenv": "^17.2.2",
+		"dprint-node": "^1.0.8",
 		"fp-ts": "^2.16.11",
 		"glob": "^11.0.3",
 		"libsql": "^0.4.7",
@@ -54,6 +98,7 @@
 		"mysql2": "^3.14.5",
 		"neverthrow": "^8.2.0",
 		"postgres": "^3.4.7",
+		"ts-blank-space": "^0.6.2",
 		"yargs": "^17.7.2"
 	}
 }

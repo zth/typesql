@@ -1,7 +1,7 @@
-import pg from 'pg';
+import type pg from 'pg';
 
 export type Insert04Params = {
-	value: number | null;
+	value: int | null;
 }
 
 export type Insert04Result = {

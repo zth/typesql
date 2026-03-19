@@ -1,9 +1,9 @@
 import assert from 'node:assert';
-import Database from 'better-sqlite3';
 import { insertIntoRoles, selectFromRoles, SelectFromRolesResult, updateRoles } from './sql/crud/roles';
+import { openTestSqliteDb } from '../fixture-paths';
 
 describe('sqlite-nested-result', () => {
-	const db = new Database('./mydb.db');
+	const db = openTestSqliteDb();
 
 	it('insert-default-value', async () => {
 

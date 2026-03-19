@@ -8,7 +8,7 @@ export type DynamicQuery07DynamicParams = {
 }
 
 export type DynamicQuery07Result = {
-	myId?: number;
+	myId?: int;
 	name?: string;
 }
 
@@ -29,9 +29,9 @@ type SetOperator = 'IN' | 'NOT IN';
 type BetweenOperator = 'BETWEEN';
 
 export type DynamicQuery07Where =
-	| { column: 'myId'; op: NumericOperator; value: number | null }
-	| { column: 'myId'; op: SetOperator; value: number[] }
-	| { column: 'myId'; op: BetweenOperator; value: [number | null, number | null] }
+	| { column: 'myId'; op: NumericOperator; value: int | null }
+	| { column: 'myId'; op: SetOperator; value: int[] }
+	| { column: 'myId'; op: BetweenOperator; value: [int | null, int | null] }
 	| { column: 'name'; op: StringOperator; value: string | null }
 	| { column: 'name'; op: SetOperator; value: string[] }
 	| { column: 'name'; op: BetweenOperator; value: [string | null, string | null] }

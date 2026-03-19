@@ -1,16 +1,16 @@
 import assert from 'node:assert';
 import { dynamicQuery01, DynamicQuery01Result } from './sql/dynamic-query01';
-import Database from 'better-sqlite3';
 import {
 	dynamicQuery02, DynamicQuery02Result, dynamicQuery03, DynamicQuery03Result,
 	dynamicQuery04, DynamicQuery04Result, dynamicQuery05, DynamicQuery05Result,
 	dynamicQuery10,
 	DynamicQuery10Result
 } from './sql';
+import { openTestSqliteDb } from '../fixture-paths';
 
 describe('e2e-sqlite-dynamic-query', () => {
 
-	const db = new Database('./mydb.db');
+	const db = openTestSqliteDb();
 
 	it('dynamicQuery01 - without filters', () => {
 		const result = dynamicQuery01(db);

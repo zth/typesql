@@ -1,0 +1,22 @@
+import type pg from 'pg';
+
+export type SelectGetMytable1Result = {
+	id: int;
+	value: int | null;
+}
+
+export async function selectGetMytable1(client: pg.Client | pg.Pool | pg.PoolClient): Promise<SelectGetMytable1Result[]> {
+	const sql = `
+	SELECT * FROM get_mytable1()
+	`
+	return client.query({ text: sql, rowMode: 'array' })
+		.then(res => res.rows.map(row => mapArrayToSelectGetMytable1Result(row)));
+}
+
+function mapArrayToSelectGetMytable1Result(data: any) {
+	const result: SelectGetMytable1Result = {
+		id: data[0],
+		value: data[1]
+	}
+	return result;
+}

@@ -1,7 +1,7 @@
-import pg from 'pg';
+import type pg from 'pg';
 
 export type Select11Result = {
-	id: number;
+	id: int;
 	role: string | null;
 }
 
@@ -11,7 +11,7 @@ export async function select11(client: pg.Client | pg.Pool | pg.PoolClient): Pro
 		t1.id,
 		r.role
 	FROM mytable1 t1
-	LEFT JOIN roles r on t1.id = r.id
+		LEFT JOIN roles r on t1.id = r.id
 	`
 	return client.query({ text: sql, rowMode: 'array' })
 		.then(res => res.rows.map(row => mapArrayToSelect11Result(row)));

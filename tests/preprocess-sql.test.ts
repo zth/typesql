@@ -197,6 +197,95 @@ describe('preprocess-sql', () => {
 
 		assert.deepStrictEqual(actual, expected);
 	});
+
+	it('ignores named parameters inside comments and string literals', () => {
+		const sql = `
+select ':ignored', "-- :ignored", col
+from mytable1
+where id = :id
+	and note = 'still :ignored'
+	/* :ignored */
+	-- :ignored
+	and name = :name`;
+
+		const actual = preprocessSql(sql, 'postgres');
+		const expected: PreprocessedSql = {
+			sql: `
+select ':ignored', "-- :ignored", col
+from mytable1
+where id = $1
+	and note = 'still :ignored'
+	/* :ignored */
+	-- :ignored
+	and name = $2`,
+			namedParameters: [
+				{ paramName: 'id', paramNumber: 1 },
+				{ paramName: 'name', paramNumber: 2 }
+			]
+		};
+
+		assert.deepStrictEqual(actual, expected);
+	});
+
+	it('ignores named parameters inside postgres dollar-quoted strings', () => {
+		const sql = `
+select $tag$
+:ignored
+$tag$, :real_value::text from mytable1`;
+
+		const actual = preprocessSql(sql, 'postgres');
+		const expected: PreprocessedSql = {
+			sql: `
+select $tag$
+:ignored
+$tag$, $1::text from mytable1`,
+			namedParameters: [
+				{ paramName: 'real_value', paramNumber: 1 }
+			]
+		};
+
+		assert.deepStrictEqual(actual, expected);
+	});
+
+	it('keeps postgres positional parameters and avoids collisions with named ones', () => {
+		const sql = 'select $1, :name, $2, :name, :other from mytable1';
+		const actual = preprocessSql(sql, 'postgres');
+		const expected: PreprocessedSql = {
+			sql: 'select $1, $3, $2, $3, $4 from mytable1',
+			namedParameters: [
+				{ paramName: 'param1', paramNumber: 1 },
+				{ paramName: 'name', paramNumber: 3 },
+				{ paramName: 'param2', paramNumber: 2 },
+				{ paramName: 'name', paramNumber: 3 },
+				{ paramName: 'other', paramNumber: 4 }
+			]
+		};
+
+		assert.deepStrictEqual(actual, expected);
+	});
+
+	it('ignores mysql named parameters inside hash comments', () => {
+		const sql = `select ':ignored' as txt # :ignored
+, :real as value from mytable1`;
+
+		const actual = preprocessSql(sql, 'mysql');
+		const expected: PreprocessedSql = {
+			sql: `select ':ignored' as txt # :ignored
+, ? as value from mytable1`,
+			namedParameters: [
+				{ paramName: 'real', paramNumber: 1 }
+			]
+		};
+
+		assert.deepStrictEqual(actual, expected);
+	});
+
+	it('rejects multiple sql statements explicitly', () => {
+		assert.throws(
+			() => preprocessSql('select 1; select 2', 'postgres'),
+			/multiple sql statements are not supported/i
+		);
+	});
 });
 
 describe('replaceOrderByParamWithPlaceholder', () => {

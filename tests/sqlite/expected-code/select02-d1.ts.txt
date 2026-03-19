@@ -1,7 +1,7 @@
 import type { D1Database } from '@cloudflare/workers-types';
 
 export type Select02Result = {
-	id: number;
+	id: int;
 }
 
 export async function select02(db: D1Database): Promise<Select02Result[]> {

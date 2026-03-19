@@ -1,0 +1,27 @@
+%%raw("async function selectGenerateSeriesBigintFrom(client) {
+  const sql = `
+	SELECT * FROM generate_series(1::bigint, 5::bigint) AS g
+	`
+  return client.query({ text: sql, rowMode: 'array' })
+    .then((res) => res.rows.map((row) => mapArrayToSelectGenerateSeriesBigintFromResult(row)))
+}
+
+function mapArrayToSelectGenerateSeriesBigintFromResult(data) {
+  const result = {
+    g: data[0],
+  }
+  return result
+}
+")
+
+type selectGenerateSeriesBigintFromResult = {
+  g: Null.t<BigInt.t>
+}
+
+external selectGenerateSeriesBigintFrom: (Pg.client) => promise<array<selectGenerateSeriesBigintFromResult>> = "selectGenerateSeriesBigintFrom"
+let run: (Pg.client) => promise<array<selectGenerateSeriesBigintFromResult>> = (client) => {
+  selectGenerateSeriesBigintFrom(client)
+}
+
+let query = run
+let default = query

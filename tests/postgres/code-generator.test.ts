@@ -12,7 +12,11 @@ describe('postgres-code-generator', () => {
 		type: 'pg',
 		client
 	}
-	const schemaInfo = createSchemaInfo();
+	let schemaInfo: Awaited<ReturnType<typeof createSchemaInfo>>;
+
+	before(async () => {
+		schemaInfo = await createSchemaInfo(client);
+	});
 
 	after(async () => {
 		await client.end();
@@ -177,10 +181,46 @@ where enum_constraint = :enum_value`;
 	t1.id,
 	r.role
 FROM mytable1 t1
-LEFT JOIN roles r on t1.id = r.id`;
+	LEFT JOIN roles r on t1.id = r.id`;
 
 		const actual = await generateCode(dialect, sql, 'select11', schemaInfo);
 		const expected = readFileSync('tests/postgres/expected-code/select11.ts.txt', 'utf-8');
+
+		if (actual.isErr()) {
+			assert.fail(`Shouldn't return an error: ${actual.error.description}`);
+		}
+		assert.deepStrictEqual(actual.value, expected);
+	});
+
+	it('select-generate-series-from - function table', async () => {
+		const sql = 'SELECT * FROM generate_series(1, 5) AS g';
+
+		const actual = await generateCode(dialect, sql, 'selectGenerateSeriesFrom', schemaInfo);
+		const expected = readFileSync('tests/postgres/expected-code/select-generate-series-from.ts.txt', 'utf-8');
+
+		if (actual.isErr()) {
+			assert.fail(`Shouldn't return an error: ${actual.error.description}`);
+		}
+		assert.deepStrictEqual(actual.value, expected);
+	});
+
+	it('select-unnest-from - function table with alias columns', async () => {
+		const sql = 'SELECT * FROM unnest(ARRAY[1, 2, 3]) AS t(id)';
+
+		const actual = await generateCode(dialect, sql, 'selectUnnestFrom', schemaInfo);
+		const expected = readFileSync('tests/postgres/expected-code/select-unnest-from.ts.txt', 'utf-8');
+
+		if (actual.isErr()) {
+			assert.fail(`Shouldn't return an error: ${actual.error.description}`);
+		}
+		assert.deepStrictEqual(actual.value, expected);
+	});
+
+	it('select-jsonb-to-recordset - typed record function table', async () => {
+		const sql = `SELECT * FROM jsonb_to_recordset('[{"id":1,"name":"a"}]') AS t(id int, name text)`;
+
+		const actual = await generateCode(dialect, sql, 'selectJsonbToRecordset', schemaInfo);
+		const expected = readFileSync('tests/postgres/expected-code/select-jsonb-to-recordset.ts.txt', 'utf-8');
 
 		if (actual.isErr()) {
 			assert.fail(`Shouldn't return an error: ${actual.error.description}`);
@@ -880,4 +920,3 @@ GROUP BY int4_column`;
 		assert.deepStrictEqual(actual.value, expected);
 	});
 });
-

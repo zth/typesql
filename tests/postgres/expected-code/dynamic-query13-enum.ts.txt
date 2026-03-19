@@ -1,4 +1,4 @@
-import pg from 'pg';
+import type pg from 'pg';
 import { EOL } from 'os';
 
 export type DynamicQuery13DynamicParams = {
@@ -7,7 +7,7 @@ export type DynamicQuery13DynamicParams = {
 }
 
 export type DynamicQuery13Result = {
-	enum_column?: ('x-small' | 'small' | 'medium' | 'large' | 'x-large');
+	enum_column?: 'x-small' | 'small' | 'medium' | 'large' | 'x-large';
 }
 
 export type DynamicQuery13Select = {
@@ -24,9 +24,9 @@ type SetOperator = 'IN' | 'NOT IN';
 type BetweenOperator = 'BETWEEN';
 
 export type DynamicQuery13Where =
-	| { column: 'enum_column'; op: NumericOperator; value: ('x-small' | 'small' | 'medium' | 'large' | 'x-large') | null }
-	| { column: 'enum_column'; op: SetOperator; value: ('x-small' | 'small' | 'medium' | 'large' | 'x-large')[] }
-	| { column: 'enum_column'; op: BetweenOperator; value: [('x-small' | 'small' | 'medium' | 'large' | 'x-large') | null, ('x-small' | 'small' | 'medium' | 'large' | 'x-large') | null] }
+	| { column: 'enum_column'; op: NumericOperator; value: 'x-small' | 'small' | 'medium' | 'large' | 'x-large' | null }
+	| { column: 'enum_column'; op: SetOperator; value: 'x-small' | 'small' | 'medium' | 'large' | 'x-large'[] }
+	| { column: 'enum_column'; op: BetweenOperator; value: ['x-small' | 'small' | 'medium' | 'large' | 'x-large' | null, 'x-small' | 'small' | 'medium' | 'large' | 'x-large' | null] }
 
 export async function dynamicQuery13(client: pg.Client | pg.Pool | pg.PoolClient, params?: DynamicQuery13DynamicParams): Promise<DynamicQuery13Result[]> {
 

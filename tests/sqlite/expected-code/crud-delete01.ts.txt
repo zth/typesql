@@ -1,7 +1,7 @@
 import type { Database } from 'better-sqlite3';
 
 export type DeleteFromMytable1Params = {
-	id: number;
+	id: int;
 }
 
 export type DeleteFromMytable1Result = {

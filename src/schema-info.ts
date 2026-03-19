@@ -6,11 +6,13 @@ import { createSqliteClient, ForeignKeyInfo, loadDbSchema, selectSqliteTablesFro
 import { DatabaseClient, MySqlClient, SQLiteClient, TypeSqlDialect, TypeSqlError } from './types';
 import {
 	loadDbSchema as loadPostgresDbSchema, loadForeignKeys as loadPostgresForeignKeys,
-	loadEnumsMap as loadPostgresEnumsMap, loadUserFunctions as loadPostgresUserFunctions, loadCheckConstraints as loadPostgresCheckConstraints
+	loadEnumsMap as loadPostgresEnumsMap, loadUserFunctions as loadPostgresUserFunctions,
+	loadCheckConstraints as loadPostgresCheckConstraints, loadBuiltinFunctions as loadPostgresBuiltinFunctions
 } from './drivers/postgres';
 import { okAsync, ResultAsync } from 'neverthrow';
 import { Either, right } from 'fp-ts/lib/Either';
 import { UserFunctionSchema } from './postgres-query-analyzer/types';
+import { PostgresBuiltinFunctionSchema } from './postgres-query-analyzer/builtin-functions';
 import { PostgresColumnSchema } from './drivers/types';
 import { Sql } from 'postgres';
 
@@ -25,6 +27,7 @@ export type PostgresSchemaInfo = {
 	columns: PostgresColumnSchema[];
 	foreignKeys: ForeignKeyInfo[];
 	userFunctions: UserFunctionSchema[];
+	builtinFunctions: PostgresBuiltinFunctionSchema[];
 	enumTypes: EnumMap;
 	checkConstraints: CheckConstraintResult;
 }
@@ -81,14 +84,16 @@ function _loadPostgresSchemaInfo(client: Sql, schemas: string[] | null): ResultA
 	const foreignKeysResult = loadPostgresForeignKeys(client);
 	const enumTypesResult = loadPostgresEnumsMap(client);
 	const userFunctionsResult = loadPostgresUserFunctions(client, schemas);
+	const builtinFunctionsResult = loadPostgresBuiltinFunctions(client);
 	const checkConstraintsResult = loadPostgresCheckConstraints(client);
-	const schemaInfo = ResultAsync.combine([schemaResult, foreignKeysResult, enumTypesResult, userFunctionsResult, checkConstraintsResult])
-		.map(([schema, foreignKeys, enumTypes, userFunctions, checkConstraints]) => {
+	const schemaInfo = ResultAsync.combine([schemaResult, foreignKeysResult, enumTypesResult, userFunctionsResult, builtinFunctionsResult, checkConstraintsResult])
+		.map(([schema, foreignKeys, enumTypes, userFunctions, builtinFunctions, checkConstraints]) => {
 			const result: PostgresSchemaInfo = {
 				kind: 'pg',
 				columns: schema,
 				foreignKeys,
 				userFunctions,
+				builtinFunctions,
 				enumTypes,
 				checkConstraints
 			}

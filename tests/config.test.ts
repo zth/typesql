@@ -11,6 +11,10 @@ describe('resolveConfig', () => {
     const input: TypeSqlConfig = {
       databaseUri: './mydb.db',
       sqlDir: './sql',
+      rescript: {
+        srcDir: './rescript-src',
+        outDir: './rescript-generated'
+      },
       client: 'bun:sqlite',
       includeCrudTables: []
     };
@@ -19,11 +23,33 @@ describe('resolveConfig', () => {
     const expected: TypeSqlConfig = {
       databaseUri: path.resolve(configDir, './mydb.db'),
       sqlDir: path.resolve(configDir, './sql'),
+      rescript: {
+        srcDir: path.resolve(configDir, './rescript-src'),
+        outDir: path.resolve(configDir, './rescript-generated')
+      },
       client: 'bun:sqlite',
       includeCrudTables: []
     };
 
     assert.deepStrictEqual(actual, expected);
+  });
+
+  it('resolves rescript srcDir while preserving optional outDir defaults', () => {
+    const input: TypeSqlConfig = {
+      databaseUri: './mydb.db',
+      sqlDir: './sql',
+      rescript: {
+        srcDir: './src'
+      },
+      client: 'bun:sqlite',
+      includeCrudTables: []
+    };
+
+    const actual = resolveConfig(fakeConfigPath, input);
+    assert.deepStrictEqual(actual.rescript, {
+      srcDir: path.resolve(configDir, './src'),
+      outDir: undefined
+    });
   });
 
   it('does not resolve absolute databaseUri', () => {

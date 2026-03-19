@@ -1,13 +1,13 @@
-import pg from 'pg';
+import type pg from 'pg';
 
 export type Select06Params = {
 	param1: string;
-	param2: number[];
+	param2: int[];
 	param3: string;
 }
 
 export type Select06Result = {
-	id: number;
+	id: int;
 }
 
 let currentIndex: number;

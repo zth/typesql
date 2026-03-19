@@ -1,7 +1,7 @@
 import type { Client, Transaction } from '@libsql/client';
 
 export type Delete01Params = {
-	param1: number;
+	param1: int;
 }
 
 export type Delete01Result = {

@@ -20,6 +20,14 @@ export function resolveConfig(configPath: string, config: TypeSqlConfig): TypeSq
 		...config,
 		databaseUri: resolvedDatabaseUri,
 		sqlDir: path.resolve(configDir, config.sqlDir),
+		rescript:
+			config.rescript == null
+				? undefined
+				: {
+						...config.rescript,
+						srcDir: path.resolve(configDir, config.rescript.srcDir),
+						outDir: config.rescript.outDir == null ? undefined : path.resolve(configDir, config.rescript.outDir)
+					}
 	};
 }
 

@@ -1,11 +1,11 @@
 import type { Database } from 'bun:sqlite';
 
 export type Select03Params = {
-	id: number;
+	id: int;
 }
 
 export type Select03Result = {
-	id: number;
+	id: int;
 }
 
 export function select03(db: Database, params: Select03Params): Select03Result[] {

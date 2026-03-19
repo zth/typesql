@@ -1,9 +1,9 @@
 import assert from 'node:assert';
-import Database from 'better-sqlite3';
 import { nested01Nested, Nested01NestedUsers, nested02Nested, Nested02NestedUsers, nested03Nested, Nested03NestedC, nested04Nested, Nested04NestedSurveys, nested04WithoutJoinTableNested, Nested04WithoutJoinTableNestedSurveys } from '../../tests/sqlite-e2e/sql';
+import { openTestSqliteDb } from '../fixture-paths';
 
 describe('sqlite-nested-result', () => {
-	const db = new Database('./mydb.db');
+	const db = openTestSqliteDb();
 
 	it('nested01 - users -> posts', () => {
 		const result = nested01Nested(db);

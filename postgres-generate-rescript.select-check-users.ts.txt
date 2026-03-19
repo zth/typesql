@@ -1,0 +1,24 @@
+import type pg from 'pg';
+
+export type SelectCheckUsersResult = {
+	id: int;
+	user_ok: bool;
+}
+
+export async function selectCheckUsers(client: pg.Client | pg.Pool | pg.PoolClient): Promise<SelectCheckUsersResult[]> {
+	const sql = `
+	SELECT u.id, check_users.*
+	FROM users u
+	CROSS JOIN LATERAL check_users(u)
+	`
+	return client.query({ text: sql, rowMode: 'array' })
+		.then(res => res.rows.map(row => mapArrayToSelectCheckUsersResult(row)));
+}
+
+function mapArrayToSelectCheckUsersResult(data: any) {
+	const result: SelectCheckUsersResult = {
+		id: data[0],
+		user_ok: data[1]
+	}
+	return result;
+}

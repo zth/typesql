@@ -6,7 +6,11 @@ import { createTestClient, createSchemaInfo, schema } from './schema';
 
 describe('postgres-generate-dynamic-info', () => {
 	const databaseClient = createTestClient();
-	const schemaInfo = createSchemaInfo();
+	let schemaInfo: Awaited<ReturnType<typeof createSchemaInfo>>;
+
+	before(async () => {
+		schemaInfo = await createSchemaInfo(databaseClient);
+	});
 
 	after(async () => {
 		await databaseClient.end();

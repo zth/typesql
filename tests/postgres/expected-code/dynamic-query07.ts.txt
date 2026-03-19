@@ -1,4 +1,4 @@
-import pg from 'pg';
+import type pg from 'pg';
 import { EOL } from 'os';
 
 export type DynamicQuery07DynamicParams = {
@@ -8,7 +8,7 @@ export type DynamicQuery07DynamicParams = {
 }
 
 export type DynamicQuery07Result = {
-	myid?: number;
+	myid?: int;
 	name?: string;
 }
 
@@ -29,9 +29,9 @@ type SetOperator = 'IN' | 'NOT IN';
 type BetweenOperator = 'BETWEEN';
 
 export type DynamicQuery07Where =
-	| { column: 'myid'; op: NumericOperator; value: number | null }
-	| { column: 'myid'; op: SetOperator; value: number[] }
-	| { column: 'myid'; op: BetweenOperator; value: [number | null, number | null] }
+	| { column: 'myid'; op: NumericOperator; value: int | null }
+	| { column: 'myid'; op: SetOperator; value: int[] }
+	| { column: 'myid'; op: BetweenOperator; value: [int | null, int | null] }
 	| { column: 'name'; op: StringOperator; value: string | null }
 	| { column: 'name'; op: SetOperator; value: string[] }
 	| { column: 'name'; op: BetweenOperator; value: [string | null, string | null] }

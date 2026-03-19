@@ -1,0 +1,22 @@
+import type pg from 'pg';
+
+export type SelectJsonbToRecordsetResult = {
+	id: int | null;
+	name: string | null;
+}
+
+export async function selectJsonbToRecordset(client: pg.Client | pg.Pool | pg.PoolClient): Promise<SelectJsonbToRecordsetResult[]> {
+	const sql = `
+	SELECT * FROM jsonb_to_recordset('[{"id":1,"name":"a"}]') AS t(id int, name text)
+	`
+	return client.query({ text: sql, rowMode: 'array' })
+		.then(res => res.rows.map(row => mapArrayToSelectJsonbToRecordsetResult(row)));
+}
+
+function mapArrayToSelectJsonbToRecordsetResult(data: any) {
+	const result: SelectJsonbToRecordsetResult = {
+		id: data[0],
+		name: data[1]
+	}
+	return result;
+}

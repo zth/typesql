@@ -5,7 +5,11 @@ import { createSchemaInfo, createTestClient } from './schema';
 
 describe('postgres-parse-select-functions', () => {
 	const client = createTestClient();
-	const schemaInfo = createSchemaInfo();
+	let schemaInfo: Awaited<ReturnType<typeof createSchemaInfo>>;
+
+	before(async () => {
+		schemaInfo = await createSchemaInfo(client);
+	});
 
 	after(async () => {
 		await client.end();
@@ -747,6 +751,110 @@ describe('postgres-parse-select-functions', () => {
 				{
 					name: 'month',
 					type: 'int4',
+					notNull: true,
+					table: ''
+				}
+			],
+			parameters: []
+		};
+		if (actual.isErr()) {
+			assert.fail(`Shouldn't return an error: ${actual.error.description}`);
+		}
+			assert.deepStrictEqual(actual.value, expected);
+	});
+
+	it('SELECT generate_series(1::bigint, 12::bigint) AS month', async () => {
+		const sql = `
+	         SELECT generate_series(1::bigint, 12::bigint) AS month
+	        `;
+		const actual = await describeQuery(client, sql, schemaInfo);
+		const expected: PostgresSchemaDef = {
+			sql,
+			queryType: 'Select',
+			multipleRowsResult: true,
+			columns: [
+				{
+					name: 'month',
+					type: 'int8',
+					notNull: true,
+					table: ''
+				}
+			],
+			parameters: []
+		};
+		if (actual.isErr()) {
+			assert.fail(`Shouldn't return an error: ${actual.error.description}`);
+		}
+		assert.deepStrictEqual(actual.value, expected);
+	});
+
+	it('SELECT generate_series(timestamp, timestamp, interval) AS bucket', async () => {
+		const sql = `
+	         SELECT generate_series('2024-01-01'::timestamp, '2024-01-03'::timestamp, '1 day'::interval) AS bucket
+	        `;
+		const actual = await describeQuery(client, sql, schemaInfo);
+		const expected: PostgresSchemaDef = {
+			sql,
+			queryType: 'Select',
+			multipleRowsResult: true,
+			columns: [
+				{
+					name: 'bucket',
+					type: 'timestamp',
+					notNull: true,
+					table: ''
+				}
+			],
+			parameters: []
+		};
+		if (actual.isErr()) {
+			assert.fail(`Shouldn't return an error: ${actual.error.description}`);
+		}
+		assert.deepStrictEqual(actual.value, expected);
+	});
+
+	it('SELECT current_date, current_time, current_timestamp, localtime, localtimestamp', async () => {
+		const sql = `
+	         SELECT
+				current_date as date_expr,
+				current_time as current_time_expr,
+				current_timestamp as current_timestamp_expr,
+				localtime as local_time_expr,
+				localtimestamp as local_timestamp_expr
+	        `;
+		const actual = await describeQuery(client, sql, schemaInfo);
+		const expected: PostgresSchemaDef = {
+			sql,
+			queryType: 'Select',
+			multipleRowsResult: false,
+			columns: [
+				{
+					name: 'date_expr',
+					type: 'date',
+					notNull: true,
+					table: ''
+				},
+				{
+					name: 'current_time_expr',
+					type: 'timetz',
+					notNull: true,
+					table: ''
+				},
+				{
+					name: 'current_timestamp_expr',
+					type: 'timestamptz',
+					notNull: true,
+					table: ''
+				},
+				{
+					name: 'local_time_expr',
+					type: 'time',
+					notNull: true,
+					table: ''
+				},
+				{
+					name: 'local_timestamp_expr',
+					type: 'timestamp',
 					notNull: true,
 					table: ''
 				}

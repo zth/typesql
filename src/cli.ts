@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 import fs from 'node:fs';
-import dotenv from 'dotenv';
 import path from 'node:path';
 import chokidar from 'chokidar';
 import yargs from 'yargs';
@@ -17,11 +16,13 @@ import uniqBy from 'lodash.uniqby';
 import { buildExportList, buildExportMap, loadConfig, resolveTsFilePath } from './load-config';
 import { PostgresColumnSchema } from './drivers/types';
 import { createCodeBlockWriter } from './codegen/shared/codegen-util';
+import { loadEnvFileIfPresent } from './cli-io';
+import { registerRescriptCommands } from './rescript-cli/commands';
 
 const CRUD_FOLDER = 'crud';
 
 function parseArgs() {
-	return yargs
+	const parser = yargs
 		.usage('Usage: $0 [options] DIRECTORY')
 		.option('config', {
 			describe: 'Path to the TypeSQL config file (e.g., ./src/sql/typesql.json)',
@@ -55,15 +56,7 @@ function parseArgs() {
 				});
 			},
 			(args) => {
-				const envFile = args.envFile;
-				if (envFile) {
-					if (fs.existsSync(envFile)) {
-						dotenv.config({ path: envFile, quiet: true });
-					} else {
-						console.warn(`Warning: .env file not found: ${envFile}`);
-					}
-				}
-
+				loadEnvFileIfPresent(args.envFile as string | undefined);
 				const config = loadConfig(args.config);
 				compile(args.watch, config);
 			}
@@ -94,11 +87,8 @@ function parseArgs() {
 				const genOption = args.option as SqlGenOption;
 				writeSql(genOption, args.table, args['sql-name'], config);
 			}
-		)
-
-		.demand(1, 'Please specify one of the commands!')
-		.wrap(null)
-		.strict().argv;
+		);
+	return registerRescriptCommands(parser).demand(1, 'Please specify one of the commands!').wrap(null).strict().argv;
 }
 
 function validateDirectories(dir: string) {
@@ -107,7 +97,13 @@ function validateDirectories(dir: string) {
 	}
 }
 
-function watchDirectories(client: DatabaseClient, sqlDir: string, outDir: string, dbSchema: SchemaInfo | PostgresSchemaInfo, config: TypeSqlConfig) {
+function watchDirectories(
+	client: DatabaseClient,
+	sqlDir: string,
+	outDir: string,
+	dbSchema: SchemaInfo | PostgresSchemaInfo,
+	config: TypeSqlConfig
+) {
 	const dirGlob = `${sqlDir}/**/*.sql`;
 
 	chokidar
@@ -120,7 +116,15 @@ function watchDirectories(client: DatabaseClient, sqlDir: string, outDir: string
 		.on('change', (path) => rewiteFiles(client, path, sqlDir, outDir, dbSchema, isCrudFile(sqlDir, path), config));
 }
 
-async function rewiteFiles(client: DatabaseClient, sqlPath: string, sqlDir: string, outDir: string, schemaInfo: SchemaInfo | PostgresSchemaInfo, isCrudFile: boolean, config: TypeSqlConfig) {
+async function rewiteFiles(
+	client: DatabaseClient,
+	sqlPath: string,
+	sqlDir: string,
+	outDir: string,
+	schemaInfo: SchemaInfo | PostgresSchemaInfo,
+	isCrudFile: boolean,
+	config: TypeSqlConfig
+) {
 	const tsFilePath = resolveTsFilePath(sqlPath, sqlDir, outDir);
 	await generateTsFile(client, sqlPath, tsFilePath, schemaInfo, isCrudFile);
 	const tsDir = path.dirname(tsFilePath);
@@ -147,6 +151,7 @@ async function compile(watch: boolean, config: TypeSqlConfig) {
 	const dbSchema = await loadSchemaInfo(databaseClient, config.schemas);
 	if (dbSchema.isErr()) {
 		console.error(`Error: ${dbSchema.error.description}.`);
+		await closeClient(databaseClient);
 		return;
 	}
 
@@ -155,7 +160,9 @@ async function compile(watch: boolean, config: TypeSqlConfig) {
 
 	const sqlFiles = globSync(dirGlob);
 
-	const filesGeneration = sqlFiles.map((sqlPath) => generateTsFile(databaseClient, sqlPath, resolveTsFilePath(sqlPath, sqlDir, outDir), dbSchema.value, isCrudFile(sqlDir, sqlPath)));
+	const filesGeneration = sqlFiles.map((sqlPath) =>
+		generateTsFile(databaseClient, sqlPath, resolveTsFilePath(sqlPath, sqlDir, outDir), dbSchema.value, isCrudFile(sqlDir, sqlPath))
+	);
 	await Promise.all(filesGeneration);
 
 	writeIndexFile(outDir, config);
@@ -164,7 +171,7 @@ async function compile(watch: boolean, config: TypeSqlConfig) {
 		console.log('watching mode!');
 		watchDirectories(databaseClient, sqlDir, outDir, dbSchema.value, config);
 	} else {
-		closeClient(databaseClient);
+		await closeClient(databaseClient);
 	}
 }
 
@@ -206,18 +213,21 @@ async function writeSql(stmtType: SqlGenOption, tableName: string, queryName: st
 	}
 
 	const client = clientResult.value;
+	try {
+		const columnsOption = await loadTableSchema(client, tableName);
+		if (columnsOption.isErr()) {
+			console.error(columnsOption.error.description);
+			return false;
+		}
 
-	const columnsOption = await loadTableSchema(client, tableName);
-	if (columnsOption.isErr()) {
-		console.error(columnsOption.error.description);
-		return false;
+		const columns = columnsOption.value;
+		const filePath = `${sqlDir}/${queryName}`;
+
+		const generatedOk = checkAndGenerateSql(client.type, filePath, stmtType, tableName, columns);
+		return generatedOk;
+	} finally {
+		await closeClient(client);
 	}
-
-	const columns = columnsOption.value;
-	const filePath = `${sqlDir}/${queryName}`;
-
-	const generatedOk = checkAndGenerateSql(client.type, filePath, stmtType, tableName, columns);
-	return generatedOk;
 }
 
 function checkAndGenerateSql(
@@ -255,17 +265,19 @@ function generateSql(dialect: TypeSqlDialect, stmtType: SqlGenOption, tableName:
 	}
 }
 
-main().then(() => console.log('finished!'));
+main().catch((err: any) => {
+	console.error(String(err?.message || err));
+	process.exitCode = 1;
+});
 
 function _filterTables(schemaInfo: SchemaInfo | PostgresSchemaInfo, includeCrudTables: string[]) {
-	const allTables = schemaInfo.columns.map(col => ({ schema: col.schema, table: col.table } satisfies Table));
+	const allTables = schemaInfo.columns.map((col) => ({ schema: col.schema, table: col.table }) satisfies Table);
 	const uniqueTables = uniqBy(allTables, (item) => `${item.schema}:${item.table}`);
 	const filteredTables = filterTables(uniqueTables, includeCrudTables);
 	return filteredTables;
 }
 
 async function generateCrudTables(sqlFolderPath: string, schemaInfo: SchemaInfo | PostgresSchemaInfo, includeCrudTables: string[]) {
-
 	const filteredTables = _filterTables(schemaInfo, includeCrudTables);
 	for (const tableInfo of filteredTables) {
 		const tableName = tableInfo.table;
@@ -285,9 +297,17 @@ async function generateCrudTables(sqlFolderPath: string, schemaInfo: SchemaInfo 
 	}
 }
 
-function generateAndWriteCrud(client: 'pg' | SQLiteClient, filePath: string, queryType: CrudQueryType, tableName: string, columns: ColumnSchema[] | PostgresColumnSchema[]) {
-
-	const content = client === 'pg' ? generatePgCrud(queryType, tableName, columns as PostgresColumnSchema[]) : generateCrud(client, queryType, tableName, columns as ColumnSchema[]);
+function generateAndWriteCrud(
+	client: 'pg' | SQLiteClient,
+	filePath: string,
+	queryType: CrudQueryType,
+	tableName: string,
+	columns: ColumnSchema[] | PostgresColumnSchema[]
+) {
+	const content =
+		client === 'pg'
+			? generatePgCrud(queryType, tableName, columns as PostgresColumnSchema[])
+			: generateCrud(client, queryType, tableName, columns as ColumnSchema[]);
 	writeFile(filePath, content);
 	console.log('Generated file:', filePath);
 }

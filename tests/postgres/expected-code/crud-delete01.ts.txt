@@ -1,12 +1,12 @@
-import pg from 'pg';
+import type pg from 'pg';
 
 export type DeleteFromMytable1Params = {
-	id: number;
+	id: int;
 }
 
 export type DeleteFromMytable1Result = {
-	id: number;
-	value: number | null;
+	id: int;
+	value: int | null;
 }
 
 export async function deleteFromMytable1(client: pg.Client | pg.Pool | pg.PoolClient, params: DeleteFromMytable1Params): Promise<DeleteFromMytable1Result | null> {

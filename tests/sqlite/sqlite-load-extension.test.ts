@@ -1,15 +1,32 @@
 import assert from 'assert';
+import fs from 'fs';
+import path from 'path';
 import { isLeft } from 'fp-ts/lib/Either';
 import { createSqliteClient, explainSql } from '../../src/sqlite-query-analyzer/query-executor';
 import { createLibSqlClient } from '../../src/drivers/libsql';
 import { SchemaDef } from '../../src/types';
 import { parseSql } from '../../src/sqlite-query-analyzer/parser';
 import { sqliteDbSchema } from '../mysql-query-analyzer/create-schema';
+import { resolveTestPath, TEST_SQLITE_DB_PATH } from '../fixture-paths';
+
+function resolveUuidExtensionPath() {
+	switch (process.platform) {
+		case 'win32':
+			return resolveTestPath('ext', 'uuid.dll');
+		case 'darwin':
+			return resolveTestPath('ext', 'uuid.dylib');
+		default:
+			return resolveTestPath('ext', 'uuid.so');
+	}
+}
+
+const uuidExtensionPath = resolveUuidExtensionPath();
+const maybeIt = fs.existsSync(uuidExtensionPath) ? it : it.skip;
 
 describe('load-extension', () => {
-	it('better-sqlite3 - load_extension uuid4', () => {
+	maybeIt('better-sqlite3 - load_extension uuid4', () => {
 
-		const client = createSqliteClient('better-sqlite3', './mydb.db', [], ['./tests/ext/uuid.dll']);
+		const client = createSqliteClient('better-sqlite3', TEST_SQLITE_DB_PATH, [], [uuidExtensionPath]);
 		if (client.isErr()) {
 			assert.fail(`Shouldn't return an Error`);
 		}
@@ -26,9 +43,9 @@ describe('load-extension', () => {
 		assert.deepStrictEqual(explainSqlResult.right, true);
 	});
 
-	it('bun:sqlite - load_extension uuid4', () => {
+	maybeIt('bun:sqlite - load_extension uuid4', () => {
 
-		const client = createSqliteClient('bun:sqlite', './mydb.db', [], ['./tests/ext/uuid.dll']);
+		const client = createSqliteClient('bun:sqlite', TEST_SQLITE_DB_PATH, [], [uuidExtensionPath]);
 		if (client.isErr()) {
 			assert.fail(`Shouldn't return an Error`);
 		}
@@ -45,10 +62,9 @@ describe('load-extension', () => {
 		assert.deepStrictEqual(explainSqlResult.right, true);
 	});
 
-	it('libsql - load_extension uuid4', () => {
+	maybeIt('libsql - load_extension uuid4', () => {
 
-		//C:\dev\typesql\tests\ext\uuid.dll
-		const client = createLibSqlClient('./mydb.db', [], ['./tests/ext/uuid.dll'], 'authtoken');
+		const client = createLibSqlClient(TEST_SQLITE_DB_PATH, [], [uuidExtensionPath], 'authtoken');
 		if (client.isErr()) {
 			assert.fail(`Shouldn't return an Error`);
 		}

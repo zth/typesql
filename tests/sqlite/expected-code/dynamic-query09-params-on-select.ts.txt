@@ -12,9 +12,9 @@ export type DynamicQuery09Params = {
 }
 
 export type DynamicQuery09Result = {
-	id?: number;
-	double_value?: number;
-	likeName?: number;
+	id?: int;
+	double_value?: float;
+	likeName?: int;
 }
 
 export type DynamicQuery09Select = {
@@ -35,15 +35,15 @@ type SetOperator = 'IN' | 'NOT IN';
 type BetweenOperator = 'BETWEEN';
 
 export type DynamicQuery09Where =
-	| { column: 'id'; op: NumericOperator; value: number | null }
-	| { column: 'id'; op: SetOperator; value: number[] }
-	| { column: 'id'; op: BetweenOperator; value: [number | null, number | null] }
-	| { column: 'double_value'; op: NumericOperator; value: number | null }
-	| { column: 'double_value'; op: SetOperator; value: number[] }
-	| { column: 'double_value'; op: BetweenOperator; value: [number | null, number | null] }
-	| { column: 'likeName'; op: NumericOperator; value: number | null }
-	| { column: 'likeName'; op: SetOperator; value: number[] }
-	| { column: 'likeName'; op: BetweenOperator; value: [number | null, number | null] }
+	| { column: 'id'; op: NumericOperator; value: int | null }
+	| { column: 'id'; op: SetOperator; value: int[] }
+	| { column: 'id'; op: BetweenOperator; value: [int | null, int | null] }
+	| { column: 'double_value'; op: NumericOperator; value: float | null }
+	| { column: 'double_value'; op: SetOperator; value: float[] }
+	| { column: 'double_value'; op: BetweenOperator; value: [float | null, float | null] }
+	| { column: 'likeName'; op: NumericOperator; value: int | null }
+	| { column: 'likeName'; op: SetOperator; value: int[] }
+	| { column: 'likeName'; op: BetweenOperator; value: [int | null, int | null] }
 
 export function dynamicQuery09(db: Database, params?: DynamicQuery09DynamicParams): DynamicQuery09Result[] {
 

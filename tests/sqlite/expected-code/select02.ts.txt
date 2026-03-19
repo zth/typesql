@@ -1,7 +1,7 @@
 import type { Database } from 'better-sqlite3';
 
 export type Select02Result = {
-	id: number;
+	id: int;
 }
 
 export function select02(db: Database): Select02Result[] {

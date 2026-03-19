@@ -1,11 +1,11 @@
-import pg from 'pg';
+import type pg from 'pg';
 
 export type Select05Params = {
 	orderBy: Select05OrderBy[];
 }
 
 export type Select05Result = {
-	id: number;
+	id: int;
 }
 
 export async function select05(client: pg.Client | pg.Pool | pg.PoolClient, params: Select05Params): Promise<Select05Result[]> {

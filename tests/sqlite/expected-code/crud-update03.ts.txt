@@ -1,12 +1,12 @@
 import type { Database } from 'better-sqlite3';
 
 export type UpdateMytable3Data = {
-	double_value?: number | null;
+	double_value?: float | null;
 	name?: string;
 }
 
 export type UpdateMytable3Params = {
-	id: number;
+	id: int;
 }
 
 export type UpdateMytable3Result = {

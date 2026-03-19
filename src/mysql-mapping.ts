@@ -66,12 +66,22 @@ export type TsType =
 	| 'string[]'
 	| 'number'
 	| 'number[]'
+	| 'int'
+	| 'int[]'
+	| 'float'
+	| 'float[]'
 	| 'boolean'
 	| 'boolean[]'
+	| 'bool'
+	| 'bool[]'
 	| 'Date'
 	| 'Date[]'
 	| 'Object'
 	| 'Object[]'
+	| 'JSON'
+	| 'JSON[]'
+	| 'bigint'
+	| 'bigint[]'
 	| 'Uint8Array'
 	| 'ArrayBuffer'
 	| 'ArrayBuffer[]'
@@ -79,27 +89,31 @@ export type TsType =
 	| 'any[]'
 	| 'null';
 
-function convertToTsType(mySqlType: MySqlType | 'any'): TsType {
+function converToTsType(mySqlType: MySqlType | 'any'): TsType {
 	switch (mySqlType) {
 		case 'tinyint':
 		case 'smallint':
 		case 'int':
-		case 'float':
-		case 'double':
-		case 'bigint':
 		case 'mediumint':
 		case 'year':
-			return 'number';
+		case 'bigint':
+			return 'int';
 
 		case 'tinyint[]':
 		case 'smallint[]':
 		case 'int[]':
-		case 'float[]':
-		case 'double[]':
-		case 'bigint[]':
 		case 'mediumint[]':
 		case 'year[]':
-			return 'number[]';
+		case 'bigint[]':
+			return 'int[]';
+
+		case 'float':
+		case 'double':
+			return 'float';
+
+		case 'float[]':
+		case 'double[]':
+			return 'float[]';
 
 		case 'varchar':
 		case 'varbinary':
@@ -119,11 +133,11 @@ function convertToTsType(mySqlType: MySqlType | 'any'): TsType {
 		case 'time2':
 			return 'Date';
 		case 'bit':
-			return 'boolean';
+			return 'bool';
 		case 'bit[]':
-			return 'boolean[]';
+			return 'bool[]';
 		case 'json':
-			return 'Object';
+			return 'JSON';
 		case 'null':
 			return 'null';
 		case 'tinytext':
@@ -189,7 +203,7 @@ type MySqlTypeHash = {
 	[a: number]: MySqlType | string;
 };
 
-export const typesMapping: MySqlTypeHash = {
+const typesMapping: MySqlTypeHash = {
 	0: 'decimal', //deprecated? newdecimal=246
 	1: 'tinyint',
 	2: 'smallint',
@@ -223,9 +237,8 @@ export const typesMapping: MySqlTypeHash = {
 	255: 'geometry'
 };
 
-export type MySqlTypeMapper = {
-	convertToTsType: (mySqlType: MySqlType | 'any') => TsType;
-}
-export const mapper: MySqlTypeMapper = {
-	convertToTsType
+export const mapper: {
+	converToTsType: (mySqlType: MySqlType | 'any') => TsType;
+} = {
+	converToTsType
 };

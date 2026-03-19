@@ -174,20 +174,20 @@ function mapColumnType(postgresType: PostgresType, json = false): TsType {
 	return tsType;
 }
 
-export function _mapColumnType(postgresType: PostgresType, json = false): TsType {
+function _mapColumnType(postgresType: PostgresType, json = false): TsType {
 	if (typeof postgresType === 'object') {
 		return 'any';
 	}
 	if (isEnumType(postgresType)) {
 		const enumValues = postgresType.substring(postgresType.indexOf('(') + 1, postgresType.indexOf(')'));
-		return `(${enumValues.split(',').join(' | ')})` as TsType;
+		return enumValues.split(',').join(' | ') as TsType;
 	}
 	switch (postgresType) {
 		case 'bool':
-			return 'boolean';
+			return 'bool';
 		case '_bool':
 		case 'bool[]':
-			return 'boolean[]';
+			return 'bool[]';
 		case 'bytea':
 			return json ? 'string' : 'ArrayBuffer';
 		case '_bytea':
@@ -209,20 +209,20 @@ export function _mapColumnType(postgresType: PostgresType, json = false): TsType
 		case 'name[]':
 			return 'string[]';
 		case 'int8':
-			return 'string';
+			return 'bigint';
 		case '_int8':
 		case 'int8[]':
-			return 'string[]';
+			return 'bigint[]';
 		case 'int2':
-			return 'number';
+			return 'int';
 		case '_int2':
 		case 'int2[]':
-			return 'number[]';
+			return 'int[]';
 		case 'int4':
-			return 'number';
+			return 'int';
 		case '_int4':
 		case 'int4[]':
-			return 'number[]';
+			return 'int[]';
 		case 'text':
 			return 'string';
 		case '_text':
@@ -239,10 +239,10 @@ export function _mapColumnType(postgresType: PostgresType, json = false): TsType
 		case 'date[]':
 			return json ? 'string[]' : 'Date';
 		case 'bit':
-			return 'boolean';
+			return 'bool';
 		case '_bit':
 		case 'bit[]':
-			return 'boolean[]';
+			return 'bool[]';
 		case 'varbit':
 			return 'string';
 		case '_varbit':
@@ -259,15 +259,15 @@ export function _mapColumnType(postgresType: PostgresType, json = false): TsType
 		case 'uuid[]':
 			return 'string[]';
 		case 'float4':
-			return 'number';
+			return 'float';
 		case '_float4':
 		case 'float4[]':
-			return 'number[]';
+			return 'float[]';
 		case 'float8':
-			return 'number';
+			return 'float';
 		case '_float8':
 		case 'float8[]':
-			return 'number[]'
+			return 'float[]'
 		case 'timestamp':
 		case 'timestamptz':
 			return json ? 'string' : 'Date'
@@ -305,12 +305,12 @@ export function _mapColumnType(postgresType: PostgresType, json = false): TsType
 			return 'string[]';
 		case 'json':
 		case 'jsonb':
-			return 'any';
+			return 'JSON';
 		case '_json':
 		case 'json[]':
 		case '_jsonb':
 		case 'jsonb[]':
-			return 'any[]';
+			return 'JSON[]';
 		case 'record':
 		case '_record':
 		case 'int2vector':
@@ -413,10 +413,8 @@ export function _mapColumnType(postgresType: PostgresType, json = false): TsType
 	}
 }
 
-export type PostgresTypeMapper = {
+export const mapper: {
 	mapColumnType: (postgresType: PostgresType, json?: boolean) => TsType;
-}
-
-export const mapper: PostgresTypeMapper = {
+} = {
 	mapColumnType
 };

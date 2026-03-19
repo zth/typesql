@@ -24,7 +24,7 @@ import { preprocessSql } from '../describe-query';
 import { explainSql } from '../sqlite-query-analyzer/query-executor';
 import { mapToDynamicParams, mapToDynamicResultColumns, mapToDynamicSelectColumns } from '../ts-dynamic-query-descriptor';
 import { mapper } from '../drivers/sqlite';
-import { capitalize, convertToCamelCaseName, generateRelationType, removeDuplicatedParameters2, renameInvalidNames, TsDescriptor, writeBuildOrderByBlock, writeBuildSqlFunction, writeDynamicQueryOperators, writeMapToResultFunction, writeNestedTypes, writeOrderByToObjectFunction, writeWhereConditionFunction, writeCollectFunction, writeGroupByFunction, createTypeNames, createCodeBlockWriter, writeDynamicQueryParamType, writeSelectFragements } from './shared/codegen-util';
+import { capitalize, convertToCamelCaseName, generateRelationType, removeDuplicatedParameters2, renameInvalidNames, TsDescriptor, writeBuildOrderByBlock, writeBuildSqlFunction, writeDynamicQueryOperators, writeMapToResultFunction, writeNestedTypes, writeOrderByToObjectFunction, writeWhereConditionFunction, writeCollectFunction, writeGroupByFunction, createTypeNames, createCodeBlockWriter, writeDynamicQueryParamType, writeSelectFragements, writeAnalysisWarning } from './shared/codegen-util';
 
 type ExecFunctionParams = {
 	functionName: string;
@@ -54,7 +54,16 @@ export function validateAndGenerateCode(
 	sqliteDbSchema: ColumnSchema[],
 	isCrud = false
 ): Either<TypeSqlError, string> {
-	const { sql: processedSql } = preprocessSql(sql, 'sqlite');
+	let processedSql: string;
+	try {
+		processedSql = preprocessSql(sql, 'sqlite').sql;
+	} catch (error) {
+		const err = error as Error;
+		return left({
+			name: 'Invalid sql',
+			description: err.message
+		});
+	}
 	const explainSqlResult = explainSql(client.client, processedSql);
 	if (isLeft(explainSqlResult)) {
 		return left({
@@ -63,6 +72,14 @@ export function validateAndGenerateCode(
 		});
 	}
 	const code = generateTsCode(sql, queryName, sqliteDbSchema, client.type, isCrud);
+	if (isLeft(code)) {
+		const degradedSchema = parseSql(sql, sqliteDbSchema, client.client);
+		if (isLeft(degradedSchema)) {
+			return code;
+		}
+		const tsDescriptor = createTsDescriptor(degradedSchema.right, client.type);
+		return right(generateCodeFromTsDescriptor(client.type, queryName, tsDescriptor, isCrud));
+	}
 	return code;
 }
 
@@ -148,7 +165,8 @@ function createTsDescriptor(queryInfo: SchemaDef, client: SQLiteClient): TsDescr
 		parameterNames: [],
 		parameters: queryInfo.parameters.map((param) => mapParameterToTsFieldDescriptor(param, client)),
 		data: queryInfo.data?.map((param) => mapParameterToTsFieldDescriptor(param, client)),
-		orderByColumns: queryInfo.orderByColumns
+		orderByColumns: queryInfo.orderByColumns,
+		analysis: queryInfo.analysis
 	};
 	if (queryInfo.nestedInfo) {
 		const nestedDescriptor2 = queryInfo.nestedInfo.map((relation) => {
@@ -347,6 +365,7 @@ function generateCodeFromTsDescriptor(client: SQLiteClient, queryName: string, t
 	const queryParams = queryParamsWithoutBrackets !== '' ? `[${queryParamsWithoutBrackets}]` : '';
 	const isDynamicQuery = tsDescriptor.dynamicQuery2 != null;
 
+	writeAnalysisWarning(writer, tsDescriptor.analysis);
 	writeImports(writer, client, isDynamicQuery);
 	if (tsDescriptor.dynamicQuery2 != null) {
 		writer.blankLine();

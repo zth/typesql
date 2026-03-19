@@ -1,8 +1,8 @@
-import pg from 'pg';
+import type pg from 'pg';
 
 export type SelectJson03Result = {
 	value1: string[];
-	value2: (any | null | string | number)[];
+	value2: (any | null | string | int)[];
 }
 
 export async function selectJson03(client: pg.Client | pg.Pool | pg.PoolClient): Promise<SelectJson03Result | null> {

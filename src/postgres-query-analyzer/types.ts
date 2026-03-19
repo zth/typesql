@@ -1,3 +1,4 @@
+import type { AnalysisInfo } from '../analysis-types';
 import { ParameterDef } from '../types';
 import { DynamicSqlInfoResult2 } from '../mysql-query-analyzer/types';
 import { RelationInfo2 } from '../sqlite-query-analyzer/sqlite-describe-nested-query';
@@ -32,6 +33,7 @@ export type PostgresSchemaDef = {
 	data?: PostgresParameterDef[];
 	dynamicSqlQuery2?: DynamicSqlInfoResult2;
 	nestedInfo?: RelationInfo2[];
+	analysis?: AnalysisInfo;
 };
 
 export type UserFunctionSchema = {

@@ -1,13 +1,13 @@
-import pg from 'pg';
+import type pg from 'pg';
 
 export type SelectJson07Result = {
-	user_id: number;
+	user_id: int;
 	user_name: string;
 	jsonb_agg: SelectJson07JsonbAggType[] | null;
 }
 
 export type SelectJson07JsonbAggType = {
-	id: number;
+	id: int;
 	title: string;
 }
 

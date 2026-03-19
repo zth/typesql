@@ -1,0 +1,10 @@
+{
+  "databaseUri": "./test.db",
+  "sqlDir": "./sql",
+  "client": "better-sqlite3",
+  "includeCrudTables": [],
+  "rescript": {
+    "srcDir": "./src",
+    "outDir": "./src/__generated__"
+  }
+}

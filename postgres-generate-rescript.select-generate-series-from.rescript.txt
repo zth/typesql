@@ -1,0 +1,27 @@
+%%raw("async function selectGenerateSeriesFrom(client) {
+  const sql = `
+	SELECT * FROM generate_series(1, 5) AS g
+	`
+  return client.query({ text: sql, rowMode: 'array' })
+    .then((res) => res.rows.map((row) => mapArrayToSelectGenerateSeriesFromResult(row)))
+}
+
+function mapArrayToSelectGenerateSeriesFromResult(data) {
+  const result = {
+    g: data[0],
+  }
+  return result
+}
+")
+
+type selectGenerateSeriesFromResult = {
+  g: Null.t<int>
+}
+
+external selectGenerateSeriesFrom: (Pg.client) => promise<array<selectGenerateSeriesFromResult>> = "selectGenerateSeriesFrom"
+let run: (Pg.client) => promise<array<selectGenerateSeriesFromResult>> = (client) => {
+  selectGenerateSeriesFrom(client)
+}
+
+let query = run
+let default = query

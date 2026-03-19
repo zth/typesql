@@ -1,14 +1,14 @@
 import type { Database } from 'better-sqlite3';
 
 export type Nested02Params = {
-	clientId: number;
+	clientId: int;
 }
 
 export type Nested02Result = {
-	id: number;
-	id_2: number;
+	id: int;
+	id_2: int;
 	address: string;
-	id_3?: number;
+	id_3?: int;
 	address_2?: string;
 }
 
@@ -42,18 +42,18 @@ function mapArrayToNested02Result(data: any) {
 }
 
 export type Nested02NestedC = {
-	id: number;
+	id: int;
 	a1: Nested02NestedA1;
 	a2: Nested02NestedA2 | null;
 }
 
 export type Nested02NestedA1 = {
-	id: number;
+	id: int;
 	address: string;
 }
 
 export type Nested02NestedA2 = {
-	id: number;
+	id: int;
 	address: string;
 }
 

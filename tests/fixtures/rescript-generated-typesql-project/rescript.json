@@ -1,0 +1,15 @@
+{
+  "name": "rescript-generated-typesql-project",
+  "sources": [
+    {
+      "dir": "src",
+      "subdirs": true
+    }
+  ],
+  "package-specs": {
+    "module": "commonjs",
+    "in-source": false
+  },
+  "suffix": ".js",
+  "ppx-flags": [["rescript-embed-lang/ppx", "-enable-generic-transform"]]
+}

@@ -1,0 +1,38 @@
+import type { Connection } from 'mysql2/promise';
+
+export type SelectUsersParams = {
+    ids: int[];
+    names: string[];
+}
+
+export type SelectUsersResult = {
+    id: int;
+    name: string;
+    bool_expr: bool;
+    date_expr: Date;
+    datetime_expr: Date;
+}
+
+export async function selectUsers(connection: Connection, params: SelectUsersParams): Promise<SelectUsersResult[]> {
+    const sql = `
+    select u.*, true as bool_expr, curdate() as date_expr, now() as datetime_expr
+    from users u
+    where u.id in (?)
+      and u.name in (?)
+    `
+
+    return connection.query({sql, rowsAsArray: true}, [params.ids.length == 0? null : params.ids, params.names.length == 0? null : params.names])
+        .then(res => res[0] as any[])
+        .then(res => res.map(data => mapArrayToSelectUsersResult(data)));
+}
+
+function mapArrayToSelectUsersResult(data: any) {
+    const result: SelectUsersResult = {
+        id: data[0],
+        name: data[1],
+        bool_expr: data[2],
+        date_expr: data[3],
+        datetime_expr: data[4]
+    }
+    return result;
+}

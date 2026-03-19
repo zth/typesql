@@ -5,21 +5,21 @@ import { SQLiteClient } from '../types';
 function mapColumnType(sqliteType: SQLiteType, client: SQLiteClient): TsType {
 	switch (sqliteType) {
 		case 'INTEGER':
-			return 'number';
+			return 'int';
 		case 'INTEGER[]':
-			return 'number[]';
+			return 'int[]';
 		case 'TEXT':
 			return 'string';
 		case 'TEXT[]':
 			return 'string[]';
 		case 'NUMERIC':
-			return 'number';
+			return 'float';
 		case 'NUMERIC[]':
-			return 'number[]';
+			return 'float[]';
 		case 'REAL':
-			return 'number';
+			return 'float';
 		case 'REAL[]':
-			return 'number[]';
+			return 'float[]';
 		case 'DATE':
 			return 'Date';
 		case 'DATE_TIME':
@@ -27,19 +27,17 @@ function mapColumnType(sqliteType: SQLiteType, client: SQLiteClient): TsType {
 		case 'BLOB':
 			return client === 'better-sqlite3' ? 'Uint8Array' : 'ArrayBuffer';
 		case 'BOOLEAN':
-			return 'boolean';
+			return 'bool';
 	}
 	if (sqliteType.startsWith('ENUM')) {
 		const enumValues = sqliteType.substring(sqliteType.indexOf('(') + 1, sqliteType.indexOf(')'));
-		return `(${enumValues.split(',').join(' | ')})` as TsType;
+		return enumValues.split(',').join(' | ') as TsType;
 	}
 	return 'any';
 }
 
-export type SQLiteTypeMapper = {
-	mapColumnType: (sqliteType: SQLiteType, client: SQLiteClient) => TsType;
-}
-
-export const mapper: SQLiteTypeMapper = {
+export const mapper: {
+    mapColumnType: (sqliteType: SQLiteType, client: SQLiteClient) => TsType;
+} = {
 	mapColumnType
 };

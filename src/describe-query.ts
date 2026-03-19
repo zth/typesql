@@ -1,9 +1,10 @@
-import type { SchemaDef, ParameterDef, TypeSqlError, PreprocessedSql, MySqlDialect, NamedParamInfo } from './types';
+import type { SchemaDef, ParameterDef, TypeSqlError, PreprocessedSql, MySqlDialect } from './types';
 import { extractQueryInfo } from './mysql-query-analyzer/parse';
 import { type Either, isLeft, right, left } from 'fp-ts/lib/Either';
 import type { ColumnInfo, ColumnSchema } from './mysql-query-analyzer/types';
 import type { InferType, DbType } from './mysql-mapping';
 import { explainSql, loadMysqlSchema } from './queryExectutor';
+import { preprocessSqlText } from './sql-preprocessor';
 
 export function describeSql(dbSchema: ColumnSchema[], sql: string): SchemaDef {
 	const { sql: processedSql, namedParameters } = preprocessSql(sql, 'mysql');
@@ -122,16 +123,16 @@ export function verifyNotInferred(type: InferType): DbType | 'any' {
 }
 
 export async function parseSql(client: MySqlDialect, sql: string): Promise<Either<TypeSqlError, SchemaDef>> {
-	const { sql: processedSql } = preprocessSql(sql, 'mysql');
-	const explainResult = await explainSql(client.client, processedSql);
-	if (isLeft(explainResult)) {
-		return explainResult;
-	}
-	const dbSchema = await loadMysqlSchema(client.client, client.schema);
-	if (dbSchema.isErr()) {
-		return left(dbSchema.error);
-	}
 	try {
+		const { sql: processedSql } = preprocessSql(sql, 'mysql');
+		const explainResult = await explainSql(client.client, processedSql);
+		if (isLeft(explainResult)) {
+			return explainResult;
+		}
+		const dbSchema = await loadMysqlSchema(client.client, client.schema);
+		if (dbSchema.isErr()) {
+			return left(dbSchema.error);
+		}
 		const result = describeSql(dbSchema.value, sql);
 		return right(result);
 	} catch (e: any) {
@@ -146,65 +147,7 @@ export async function parseSql(client: MySqlDialect, sql: string): Promise<Eithe
 //http://dev.mysql.com/doc/refman/8.0/en/identifiers.html
 //Permitted characters in unquoted identifiers: ASCII: [0-9,a-z,A-Z$_] (basic Latin letters, digits 0-9, dollar, underscore)
 export function preprocessSql(sql: string, dialect: 'postgres' | 'mysql' | 'sqlite'): PreprocessedSql {
-	const namedParamRegex = /:[a-zA-Z$_][a-zA-Z\d$_]*/g;
-	const tempSql = sql.replace(/::([a-zA-Z0-9_]+)/g, (_, type) => `/*TYPECAST*/${type}`);
-
-	const lines = tempSql.split('\n');
-	let newSql = '';
-	const paramMap: Record<string, number> = {};
-	const namedParameters: NamedParamInfo[] = [];
-	let paramIndex = 1;
-
-	for (let i = 0; i < lines.length; i++) {
-		let line = lines[i];
-
-		if (!line.trim().startsWith('--')) {
-			// Extract named params (:paramName)
-			const matches = [...line.matchAll(namedParamRegex)];
-			if (dialect === 'postgres') {
-				const positionalParamRegex = /\$(\d+)/g;
-				const positionalMatches = [...line.matchAll(positionalParamRegex)];
-				for (const match of positionalMatches) {
-					const paramNumber = parseInt(match[1], 10);
-					namedParameters.push({
-						paramName: `param${paramNumber}`,
-						paramNumber: paramNumber
-					});
-				}
-			}
-
-			for (const match of matches) {
-				const fullMatch = match[0];
-				const paramName = fullMatch.slice(1);
-
-				if (!paramMap[paramName]) {
-					paramMap[paramName] = paramIndex++;
-				}
-				namedParameters.push({ paramName, paramNumber: paramMap[paramName] });
-			}
-
-			if (dialect === 'postgres') {
-				// Replace :paramName with $number
-				for (const param of Object.keys(paramMap)) {
-					const regex = new RegExp(`:${param}\\b`, 'g');
-					line = line.replace(regex, `$${paramMap[param]}`);
-				}
-			} else {
-				// For mysql/sqlite, replace :paramName with '?'
-				line = line.replace(namedParamRegex, '?');
-			}
-		}
-
-		newSql += line;
-		if (i !== lines.length - 1) newSql += '\n';
-	}
-
-	newSql = newSql.replace(/\/\*TYPECAST\*\/([a-zA-Z0-9_]+)/g, (_, type) => `::${type}`);
-
-	return {
-		sql: newSql,
-		namedParameters,
-	};
+	return preprocessSqlText(sql, dialect);
 }
 
 //https://stackoverflow.com/a/1695647

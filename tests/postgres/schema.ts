@@ -1,7 +1,8 @@
 import { CheckConstraintResult, EnumMap, EnumResult } from '../../src/drivers/postgres';
 import { PostgresColumnSchema } from '../../src/drivers/types';
 import { UserFunctionSchema } from '../../src/postgres-query-analyzer/types';
-import { PostgresSchemaInfo } from '../../src/schema-info';
+import { PostgresBuiltinFunctionSchema } from '../../src/postgres-query-analyzer/builtin-functions';
+import { loadSchemaInfo, PostgresSchemaInfo } from '../../src/schema-info';
 import postgres from 'postgres';
 
 export const schema: PostgresColumnSchema[] = [
@@ -1167,16 +1168,66 @@ END;
 	}
 ]
 
-export function createSchemaInfo(): PostgresSchemaInfo {
-	const schemaInfo: PostgresSchemaInfo = {
-		kind: 'pg',
-		columns: schema,
-		foreignKeys: [],
-		userFunctions,
-		enumTypes: enumMap,
-		checkConstraints
+export const builtinFunctions: PostgresBuiltinFunctionSchema[] = [
+	{
+		schema: 'pg_catalog',
+		function_name: 'generate_series',
+		identity_arguments: 'integer, integer',
+		return_type: 'SETOF integer',
+		returns_set: true,
+		language: 'internal'
+	},
+	{
+		schema: 'pg_catalog',
+		function_name: 'generate_series',
+		identity_arguments: 'bigint, bigint',
+		return_type: 'SETOF bigint',
+		returns_set: true,
+		language: 'internal'
+	},
+	{
+		schema: 'pg_catalog',
+		function_name: 'generate_series',
+		identity_arguments: 'timestamp without time zone, timestamp without time zone, interval',
+		return_type: 'SETOF timestamp without time zone',
+		returns_set: true,
+		language: 'internal'
+	},
+	{
+		schema: 'pg_catalog',
+		function_name: 'unnest',
+		identity_arguments: 'anyarray',
+		return_type: 'SETOF anyelement',
+		returns_set: true,
+		language: 'internal'
+	},
+	{
+		schema: 'pg_catalog',
+		function_name: 'jsonb_to_recordset',
+		identity_arguments: 'jsonb',
+		return_type: 'SETOF record',
+		returns_set: true,
+		language: 'internal'
+	},
+	{
+		schema: 'pg_catalog',
+		function_name: 'regexp_split_to_table',
+		identity_arguments: 'text, text',
+		return_type: 'SETOF text',
+		returns_set: true,
+		language: 'internal'
 	}
-	return schemaInfo;
+]
+
+export async function createSchemaInfo(client: ReturnType<typeof createTestClient>): Promise<PostgresSchemaInfo> {
+	const schemaInfoResult = await loadSchemaInfo({
+		type: 'pg',
+		client
+	});
+	if (schemaInfoResult.isErr()) {
+		throw new Error(schemaInfoResult.error.description);
+	}
+	return schemaInfoResult.value as PostgresSchemaInfo;
 }
 
 export function createTestClient() {

@@ -591,7 +591,7 @@ function scapeBackStick(sql: string) {
 function mapColumnType(columnType: MySqlType | MySqlType[] | 'any'): string {
 	if (columnType === 'any') return 'any';
 	const types = ([] as MySqlType[]).concat(columnType);
-	const mappedTypes = types.map((type) => mapper.convertToTsType(type));
+	const mappedTypes = types.map((type) => mapper.converToTsType(type));
 	return mappedTypes.join(' | '); // number | string
 }
 

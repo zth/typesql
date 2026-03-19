@@ -5,7 +5,11 @@ import { createTestClient, createSchemaInfo } from './schema';
 
 describe('postgres-describe-copy-stmt', () => {
 	const client = createTestClient();
-	const schemaInfo = createSchemaInfo();
+	let schemaInfo: Awaited<ReturnType<typeof createSchemaInfo>>;
+
+	before(async () => {
+		schemaInfo = await createSchemaInfo(client);
+	});
 
 	after(async () => {
 		await client.end();

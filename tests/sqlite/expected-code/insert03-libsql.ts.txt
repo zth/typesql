@@ -1,12 +1,12 @@
 import type { Client, Transaction } from '@libsql/client';
 
 export type Insert03Params = {
-	value: number | null;
+	value: int | null;
 }
 
 export type Insert03Result = {
-	id: number;
-	value?: number;
+	id: int;
+	value?: int;
 }
 
 export async function insert03(client: Client | Transaction, params: Insert03Params): Promise<Insert03Result> {

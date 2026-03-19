@@ -1,4 +1,4 @@
-import pg from 'pg';
+import type pg from 'pg';
 import { EOL } from 'os';
 
 export type DynamicQuery04DynamicParams = {
@@ -7,9 +7,9 @@ export type DynamicQuery04DynamicParams = {
 }
 
 export type DynamicQuery04Result = {
-	id?: number;
-	value?: number;
-	id_2?: number;
+	id?: int;
+	value?: int;
+	id_2?: int;
 	name?: string;
 	descr?: string;
 }
@@ -37,15 +37,15 @@ type SetOperator = 'IN' | 'NOT IN';
 type BetweenOperator = 'BETWEEN';
 
 export type DynamicQuery04Where =
-	| { column: 'id'; op: NumericOperator; value: number | null }
-	| { column: 'id'; op: SetOperator; value: number[] }
-	| { column: 'id'; op: BetweenOperator; value: [number | null, number | null] }
-	| { column: 'value'; op: NumericOperator; value: number | null }
-	| { column: 'value'; op: SetOperator; value: number[] }
-	| { column: 'value'; op: BetweenOperator; value: [number | null, number | null] }
-	| { column: 'id_2'; op: NumericOperator; value: number | null }
-	| { column: 'id_2'; op: SetOperator; value: number[] }
-	| { column: 'id_2'; op: BetweenOperator; value: [number | null, number | null] }
+	| { column: 'id'; op: NumericOperator; value: int | null }
+	| { column: 'id'; op: SetOperator; value: int[] }
+	| { column: 'id'; op: BetweenOperator; value: [int | null, int | null] }
+	| { column: 'value'; op: NumericOperator; value: int | null }
+	| { column: 'value'; op: SetOperator; value: int[] }
+	| { column: 'value'; op: BetweenOperator; value: [int | null, int | null] }
+	| { column: 'id_2'; op: NumericOperator; value: int | null }
+	| { column: 'id_2'; op: SetOperator; value: int[] }
+	| { column: 'id_2'; op: BetweenOperator; value: [int | null, int | null] }
 	| { column: 'name'; op: StringOperator; value: string | null }
 	| { column: 'name'; op: SetOperator; value: string[] }
 	| { column: 'name'; op: BetweenOperator; value: [string | null, string | null] }

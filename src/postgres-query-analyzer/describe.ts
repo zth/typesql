@@ -4,7 +4,7 @@ import { postgresDescribe, EnumMap, EnumResult, CheckConstraintResult } from '..
 import { Sql } from 'postgres';
 import { safeParseSql } from './parser';
 import { replacePostgresParams } from '../sqlite-query-analyzer/replace-list-params';
-import { ok, Result, ResultAsync, err } from 'neverthrow';
+import { errAsync, ok, Result, ResultAsync } from 'neverthrow';
 import { postgresTypes } from '../dialects/postgres';
 import { NotNullInfo, PostgresTraverseResult } from './traverse';
 import { describeNestedQuery } from '../sqlite-query-analyzer/sqlite-describe-nested-query';
@@ -14,20 +14,23 @@ import { describeDynamicQuery2 } from '../describe-dynamic-query';
 import { PostgresColumnInfo, PostgresParameterDef, PostgresSchemaDef } from './types';
 import { JsonType, PostgresEnumType, PostgresType } from '../sqlite-query-analyzer/types';
 import { PostgresSchemaInfo } from '../schema-info';
-import { replaceOrderByParamWithPlaceholder, replaceOrderByPlaceholderWithBuildOrderBy } from './util';
+import { replaceOrderByParamWithPlaceholder, replaceOrderByPlaceholderWithBuildOrderBy, replaceOrderByPlaceholderWithConstant } from './util';
+import { addAnalysis, createBaselineSchema, toErrorMessage } from './degraded-analysis';
+import { createType, groupByParamNumber, mapToParamDef } from './describe-shared';
 
 function describeQueryRefine(describeParameters: DescribeParameters): Result<PostgresSchemaDef, TypeSqlError> {
 	const { sql, postgresDescribeResult, namedParameters, schemaInfo } = describeParameters;
-	const { columns: dbSchema, enumTypes, userFunctions, checkConstraints } = schemaInfo;
+	const { columns: dbSchema, enumTypes, userFunctions, builtinFunctions, checkConstraints } = schemaInfo;
 	const generateNestedInfo = hasAnnotation(sql, '@nested');
 	const generateDynamicQueryInfo = hasAnnotation(sql, '@dynamicQuery');
+	const baselineSchema = createBaselineSchema(sql, postgresDescribeResult, namedParameters, enumTypes);
 
-	const parseResult = safeParseSql(sql, dbSchema, checkConstraints, userFunctions, { collectNestedInfo: generateNestedInfo, collectDynamicQueryInfo: generateDynamicQueryInfo });
+	const parseResult = safeParseSql(sql, dbSchema, checkConstraints, userFunctions, builtinFunctions, { collectNestedInfo: generateNestedInfo, collectDynamicQueryInfo: generateDynamicQueryInfo });
 	if (parseResult.isErr()) {
-		return err({
-			name: 'ParserError',
-			description: parseResult.error
-		})
+		return ok(addAnalysis(baselineSchema, 'describe-only', {
+			code: 'postgres.describe_only_fallback',
+			message: parseResult.error
+		}));
 	}
 	const traverseResult = parseResult.value;
 	const paramWithTypes = namedParameters.map(param => {
@@ -38,42 +41,57 @@ function describeQueryRefine(describeParameters: DescribeParameters): Result<Pos
 		} satisfies NamedParamWithType
 	});
 
-	//replace list parameters
-	const newSql = replacePostgresParams(sql, traverseResult.parameterList, namedParameters.map(param => param.paramName));
-	const parameters = transformToParamDefList(traverseResult, enumTypes, paramWithTypes);
+	try {
+		//replace list parameters
+		const newSql = replacePostgresParams(sql, traverseResult.parameterList, namedParameters.map(param => param.paramName));
+		const parameters = transformToParamDefList(traverseResult, enumTypes, paramWithTypes);
 
-	const descResult: PostgresSchemaDef = {
-		sql: newSql,
-		queryType: traverseResult.queryType,
-		multipleRowsResult: traverseResult.multipleRowsResult,
-		columns: getColumnsForQuery(generateNestedInfo, traverseResult, postgresDescribeResult, enumTypes, checkConstraints),
-		parameters: getParametersForQuery(traverseResult, parameters)
-	}
-	if (traverseResult.queryType === 'Update') {
-		descResult.data = getDataParametersForQuery(traverseResult, parameters);
-	}
-	if (traverseResult.returning) {
-		descResult.returning = traverseResult.returning;
-	}
-	if (traverseResult.orderByColumns) {
-		descResult.orderByColumns = traverseResult.orderByColumns;
-	}
-	if (traverseResult.relations) {
-		const nestedResult = describeNestedQuery(descResult.columns, traverseResult.relations || []);
-		if (isLeft(nestedResult)) {
-			return err({
-				name: 'ParserError',
-				description: 'Error during nested query result: ' + nestedResult.left.description
-			})
+		let descResult: PostgresSchemaDef = {
+			sql: newSql,
+			queryType: traverseResult.queryType,
+			multipleRowsResult: traverseResult.multipleRowsResult,
+			columns: getColumnsForQuery(generateNestedInfo, traverseResult, postgresDescribeResult, enumTypes, checkConstraints),
+			parameters: getParametersForQuery(traverseResult, parameters)
+		};
+		if (traverseResult.queryType === 'Update') {
+			descResult.data = getDataParametersForQuery(traverseResult, parameters);
 		}
-		descResult.nestedInfo = nestedResult.right;
+		if (traverseResult.returning) {
+			descResult.returning = traverseResult.returning;
+		}
+		if (traverseResult.orderByColumns) {
+			descResult.orderByColumns = traverseResult.orderByColumns;
+		}
+		if (traverseResult.relations) {
+			const nestedResult = describeNestedQuery(descResult.columns, traverseResult.relations || []);
+			if (isLeft(nestedResult)) {
+				descResult = addAnalysis(descResult, 'degraded', {
+					code: 'postgres.nested_info_unavailable',
+					message: nestedResult.left.description
+				});
+			} else {
+				descResult.nestedInfo = nestedResult.right;
+			}
+		}
+		if (traverseResult.dynamicQueryInfo) {
+			try {
+				const orderByColumns = describeParameters.hasOrderBy ? traverseResult.orderByColumns || [] : [];
+				const dynamicSqlQueryInfo = describeDynamicQuery2(traverseResult.dynamicQueryInfo, namedParameters.map(param => param.paramName), orderByColumns);
+				descResult.dynamicSqlQuery2 = dynamicSqlQueryInfo;
+			} catch (error) {
+				descResult = addAnalysis(descResult, 'degraded', {
+					code: 'postgres.dynamic_query_info_unavailable',
+					message: toErrorMessage(error)
+				});
+			}
+		}
+		return ok(descResult);
+	} catch (error) {
+		return ok(addAnalysis(baselineSchema, 'describe-only', {
+			code: 'postgres.describe_only_fallback',
+			message: toErrorMessage(error)
+		}));
 	}
-	if (traverseResult.dynamicQueryInfo) {
-		const orderByColumns = describeParameters.hasOrderBy ? traverseResult.orderByColumns || [] : [];
-		const dynamicSqlQueryInfo = describeDynamicQuery2(traverseResult.dynamicQueryInfo, namedParameters.map(param => param.paramName), orderByColumns);
-		descResult.dynamicSqlQuery2 = dynamicSqlQueryInfo;
-	}
-	return ok(descResult);
 }
 
 function mapToColumnInfo(collectNestedInfo: boolean, col: DescribeQueryColumn, posgresTypes: PostgresTypeHash, enumTypes: EnumMap, checkConstraints: CheckConstraintResult, colInfo: NotNullInfo): PostgresColumnInfo {
@@ -90,36 +108,21 @@ function mapToColumnInfo(collectNestedInfo: boolean, col: DescribeQueryColumn, p
 	return columnInfo;
 }
 
-function createType(typeId: number, postgresTypes: PostgresTypeHash, enumType: EnumResult[] | undefined, checkConstraint: PostgresEnumType | undefined, jsonType: JsonType | undefined): PostgresType {
-	if (enumType) {
-		return createEnumType(enumType!);
-	}
-	if (checkConstraint) {
-		return checkConstraint;
-	}
-	if (jsonType) {
-		return jsonType;
-	}
-	return postgresTypes[typeId] ?? 'unknown';
-}
-
-function createEnumType(enumList: EnumResult[]): PostgresEnumType {
-	const enumListStr = enumList.map(col => `'${col.enumlabel}'`).join(',');
-	return `enum(${enumListStr})`;
-}
-
-function mapToParamDef(postgresTypes: PostgresTypeHash, enumTypes: EnumMap, paramName: string, paramTypeOid: number, checkConstraint: PostgresEnumType | undefined, notNull: boolean, isList: boolean): PostgresParameterDef {
-	const arrayType = isList ? '[]' : ''
-	return {
-		name: paramName,
-		notNull,
-		type: `${createType(paramTypeOid, postgresTypes, enumTypes.get(paramTypeOid), checkConstraint, undefined)}${arrayType}` as any
-	}
-}
-
 export function describeQuery(postgres: Sql, sql: string, schemaInfo: PostgresSchemaInfo): ResultAsync<PostgresSchemaDef, TypeSqlError> {
 	const newSql = replaceOrderByParamWithPlaceholder(sql);
-	const { sql: preprocessed, namedParameters } = preprocessSql(newSql.sql, 'postgres');
+	let preprocessed: string;
+	let namedParameters: { paramName: string; paramNumber: number }[];
+	try {
+		const preprocessResult = preprocessSql(newSql.sql, 'postgres');
+		preprocessed = preprocessResult.sql;
+		namedParameters = preprocessResult.namedParameters;
+	} catch (error) {
+		const err = error as Error;
+		return errAsync({
+			name: 'Invalid SQL',
+			description: err.message
+		});
+	}
 	return postgresDescribe(postgres, preprocessed).andThen(analyzeResult => {
 
 		const describeParameters: DescribeParameters = {
@@ -128,15 +131,19 @@ export function describeQuery(postgres: Sql, sql: string, schemaInfo: PostgresSc
 			namedParameters,
 			schemaInfo,
 			hasOrderBy: newSql.replaced
-		}
+		};
 		return describeQueryRefine(describeParameters).map(desc => {
-			const { orderByColumns, ...res } = desc;
-			const result: PostgresSchemaDef = {
-				...res,
-				sql: replaceOrderByPlaceholderWithBuildOrderBy(desc.sql)
-			}
-			if (newSql.replaced) {
+			const { orderByColumns: _ignoredOrderByColumns, ...rest } = desc;
+			const result: PostgresSchemaDef = { ...rest };
+			if (newSql.replaced && desc.orderByColumns?.length) {
+				result.sql = replaceOrderByPlaceholderWithBuildOrderBy(desc.sql);
 				result.orderByColumns = desc.orderByColumns;
+			} else if (newSql.replaced) {
+				result.sql = replaceOrderByPlaceholderWithConstant(desc.sql);
+				result.analysis = addAnalysis(result, result.analysis?.mode === 'describe-only' ? 'describe-only' : 'degraded', {
+					code: 'postgres.order_by_fallback_disabled',
+					message: 'Dynamic ORDER BY generation was disabled because semantic analysis was unavailable.'
+				}).analysis;
 			}
 			return result;
 		});
@@ -157,21 +164,6 @@ function transformToParamDefList(traverseResult: PostgresTraverseResult, enumTyp
 		return paramResult;
 	})
 }
-
-type NamedParamWithTypeAndIndex = NamedParamWithType & { index: number };
-function groupByParamNumber(params: NamedParamWithType[]): Record<number, NamedParamWithTypeAndIndex[]> {
-	return params.reduce((acc, param, index) => {
-		const withIndex: NamedParamWithTypeAndIndex = { ...param, index };
-
-		if (!acc[param.paramNumber]) {
-			acc[param.paramNumber] = [];
-		}
-		acc[param.paramNumber].push(withIndex);
-
-		return acc;
-	}, {} as Record<number, NamedParamWithTypeAndIndex[]>);
-}
-
 
 function getColumnsForCopyStmt(traverseResult: PostgresTraverseResult): PostgresParameterDef[] {
 	return traverseResult.columns.map(col => {

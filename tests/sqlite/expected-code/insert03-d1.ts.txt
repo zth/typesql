@@ -1,12 +1,12 @@
 import type { D1Database } from '@cloudflare/workers-types';
 
 export type Insert03Params = {
-	value: number | null;
+	value: int | null;
 }
 
 export type Insert03Result = {
-	id: number;
-	value?: number;
+	id: int;
+	value?: int;
 }
 
 export async function insert03(db: D1Database, params: Insert03Params): Promise<Insert03Result> {

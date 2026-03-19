@@ -1,12 +1,12 @@
-import pg from 'pg';
+import type pg from 'pg';
 
 export type SelectJson04Result = {
 	result: SelectJson04ResultType;
 }
 
 export type SelectJson04ResultType = {
-	id: number;
-	list: (number | string)[];
+	id: int;
+	list: (int | string)[];
 }
 
 export async function selectJson04(client: pg.Client | pg.Pool | pg.PoolClient): Promise<SelectJson04Result | null> {

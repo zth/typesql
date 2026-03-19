@@ -1,4 +1,4 @@
-import pg from 'pg';
+import type pg from 'pg';
 
 export type SelectJson13Result = {
 	json_object_agg: Record<string, string | undefined>;
