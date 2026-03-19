@@ -19,8 +19,9 @@ type selectGenerateSeriesFromResult = {
 }
 
 external selectGenerateSeriesFrom: (Pg.client) => promise<array<selectGenerateSeriesFromResult>> = "selectGenerateSeriesFrom"
-let run: (Pg.client) => promise<array<selectGenerateSeriesFromResult>> = (db) => {
-  selectGenerateSeriesFrom(db)
+let run: (Pg.client) => promise<array<selectGenerateSeriesFromResult>> = (client) => {
+  selectGenerateSeriesFrom(client)
 }
 
-let default = run
+let query = run
+let default = query

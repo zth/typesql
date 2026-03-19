@@ -34,8 +34,9 @@ and selectUsersResult = {
 }
 
 external selectUsers: (Pg.client, selectUsersParams) => promise<Null.t<selectUsersResult>> = "selectUsers"
-let run: (Pg.client, selectUsersParams) => promise<Null.t<selectUsersResult>> = (db, params) => {
-  selectUsers(db, params)
+let run: (Pg.client, selectUsersParams) => promise<Null.t<selectUsersResult>> = (client, params) => {
+  selectUsers(client, params)
 }
 
-let default = run
+let query = run
+let default = query

@@ -19,8 +19,9 @@ type selectUnnestFromResult = {
 }
 
 external selectUnnestFrom: (Pg.client) => promise<array<selectUnnestFromResult>> = "selectUnnestFrom"
-let run: (Pg.client) => promise<array<selectUnnestFromResult>> = (db) => {
-  selectUnnestFrom(db)
+let run: (Pg.client) => promise<array<selectUnnestFromResult>> = (client) => {
+  selectUnnestFrom(client)
 }
 
-let default = run
+let query = run
+let default = query

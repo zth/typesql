@@ -23,8 +23,9 @@ type selectCheckUsersResult = {
 }
 
 external selectCheckUsers: (Pg.client) => promise<array<selectCheckUsersResult>> = "selectCheckUsers"
-let run: (Pg.client) => promise<array<selectCheckUsersResult>> = (db) => {
-  selectCheckUsers(db)
+let run: (Pg.client) => promise<array<selectCheckUsersResult>> = (client) => {
+  selectCheckUsers(client)
 }
 
-let default = run
+let query = run
+let default = query

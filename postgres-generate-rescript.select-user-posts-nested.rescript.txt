@@ -80,8 +80,9 @@ and selectUserPostsNestedPosts = {
 }
 
 external selectUserPostsNested: (Pg.client) => promise<array<selectUserPostsNestedUsers>> = "selectUserPostsNested"
-let run: (Pg.client) => promise<array<selectUserPostsNestedUsers>> = (db) => {
-  selectUserPostsNested(db)
+let run: (Pg.client) => promise<array<selectUserPostsNestedUsers>> = (client) => {
+  selectUserPostsNested(client)
 }
 
-let default = run
+let query = run
+let default = query

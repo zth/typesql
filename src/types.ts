@@ -169,6 +169,13 @@ export type PgDielect = {
 	client: Sql
 }
 
+export type ReScriptEmbedConfig = {
+	srcDir: string;
+	outDir?: string;
+	include?: string[];
+	exclude?: string[];
+};
+
 export type TypeSqlConfig = {
 	databaseUri: string;
 	sqlDir: string;
@@ -184,6 +191,7 @@ export type TypeSqlConfig = {
 	 * Defaults to ['public'] if not specified.
 	 */
 	schemas?: string[];
+	rescript?: ReScriptEmbedConfig;
 };
 
 export type SqlGenOption = 'select' | 's' | 'insert' | 'i' | 'update' | 'u' | 'delete' | 'd';

@@ -94,8 +94,9 @@ and selectUserPostsNestedPosts = {
 }
 
 external selectUserPostsNested: (connection) => promise<array<selectUserPostsNestedUsers>> = "selectUserPostsNested"
-let run: (connection) => promise<array<selectUserPostsNestedUsers>> = (db) => {
-  selectUserPostsNested(db)
+let run: (connection) => promise<array<selectUserPostsNestedUsers>> = (connection) => {
+  selectUserPostsNested(connection)
 }
 
-let default = run
+let query = run
+let default = query

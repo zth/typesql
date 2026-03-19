@@ -62,4 +62,5 @@ let run: (BetterSqlite3.client, selectUsersParams) => array<selectUsersResult> =
   selectUsers(db, params)
 }
 
-let default = run
+let query = run
+let default = query

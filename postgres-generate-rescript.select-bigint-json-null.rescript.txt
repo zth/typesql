@@ -29,8 +29,9 @@ type selectBigintJsonNullResult = {
 }
 
 external selectBigintJsonNull: (Pg.client) => promise<Null.t<selectBigintJsonNullResult>> = "selectBigintJsonNull"
-let run: (Pg.client) => promise<Null.t<selectBigintJsonNullResult>> = (db) => {
-  selectBigintJsonNull(db)
+let run: (Pg.client) => promise<Null.t<selectBigintJsonNullResult>> = (client) => {
+  selectBigintJsonNull(client)
 }
 
-let default = run
+let query = run
+let default = query

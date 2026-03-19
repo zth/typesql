@@ -21,8 +21,9 @@ type selectJsonbToRecordsetResult = {
 }
 
 external selectJsonbToRecordset: (Pg.client) => promise<array<selectJsonbToRecordsetResult>> = "selectJsonbToRecordset"
-let run: (Pg.client) => promise<array<selectJsonbToRecordsetResult>> = (db) => {
-  selectJsonbToRecordset(db)
+let run: (Pg.client) => promise<array<selectJsonbToRecordsetResult>> = (client) => {
+  selectJsonbToRecordset(client)
 }
 
-let default = run
+let query = run
+let default = query

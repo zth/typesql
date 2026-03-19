@@ -963,16 +963,20 @@ export function printRescript(ir: RescriptIR, clientType: DatabaseClient['type']
 		const paramsStr = paramsTypes.length > 0 ? `(${paramsTypes.join(', ')})` : 'unit';
 		const returnType = printFnParamType(mainFn.returnType, clientType, ir) || 'unit';
 		const signature = `${paramsStr} => ${returnType}`;
-
-		const param = mainFn.params[1];
-		const paramType = param?.type;
+		const parameterNames = mainFn.params.map((param, index) => normalizeFunctionParamName(param.name || `arg${index}`));
+		const dynamicParam = mainFn.params
+			.map((param, index) => ({
+				name: parameterNames[index]!,
+				type: param.type
+			}))
+			.find((param) => param.type?.kind === 'ref' && param.type.name.endsWith('DynamicParams'));
 
 		lines.push(`external ${ir.mainName}: ${signature} = "${ir.mainName}"`);
-		const paramArgStr = param != null ? ', params' : '';
-		lines.push(`let run: ${signature} = (db${paramArgStr}) => {`);
-		if (paramType?.kind === 'ref' && paramType.name.endsWith('DynamicParams')) {
+		lines.push(`let run: ${signature} = (${parameterNames.join(', ')}) => {`);
+		const dynamicParamType = dynamicParam?.type;
+		if (dynamicParam != null && dynamicParamType?.kind === 'ref') {
 			// Locate the DynamicParams alias and its 'where' element type
-			const dynParams = ir.types.find((t) => t.name === paramType.name);
+			const dynParams = ir.types.find((t) => t.name === dynamicParamType.name);
 			const whereElemTypeName = (() => {
 				if (!dynParams || dynParams.aliasOf.kind !== 'object') return undefined;
 				const whereField = dynParams.aliasOf.fields.find((f) => f.name === 'where');
@@ -996,9 +1000,9 @@ export function printRescript(ir: RescriptIR, clientType: DatabaseClient['type']
 			const whereMatchArms = whereUnion?.map(renderWhereMemberToMatchArm).filter(isDefined) ?? [];
 
 			if (whereMatchArms.length > 0) {
-				lines.push(`  let params = {`);
-				lines.push(`    ...params,`);
-				lines.push(`    where: ?switch params.where {`);
+				lines.push(`  let ${dynamicParam.name} = {`);
+				lines.push(`    ...${dynamicParam.name},`);
+				lines.push(`    where: ?switch ${dynamicParam.name}.where {`);
 				lines.push(`    | Some(list) =>`);
 				lines.push(`      Some(`);
 				lines.push(`        list->Array.map(w =>`);
@@ -1014,10 +1018,11 @@ export function printRescript(ir: RescriptIR, clientType: DatabaseClient['type']
 				lines.push(`  }`);
 			}
 		}
-		lines.push(`  ${ir.mainName}(db${paramArgStr})`);
+		lines.push(`  ${ir.mainName}(${parameterNames.join(', ')})`);
 		lines.push(`}`);
 		lines.push('');
-		lines.push('let default = run');
+		lines.push('let query = run');
+		lines.push('let default = query');
 	}
 
 	return lines.join('\n');
@@ -1116,7 +1121,7 @@ function printRsType(t: IRType, clientType: DatabaseClient['type'], ir: Rescript
 			}
 			if (typeof t.value === 'number') return 'float';
 			if (typeof t.value === 'boolean') return 'bool';
-			if (t.value === null) return 'Null.t<unknown>';
+				if (t.value === null) return 'Null.t<unknown>';
 			console.warn(`Literal '${String(t.value)}' maps to ReScript 'unknown'`);
 			return 'unknown';
 		}
@@ -1327,6 +1332,10 @@ function mapDatabaseRef(clientType: DatabaseClient['type']): string {
 function lowerFirst(name: string): string {
 	if (!name) return name;
 	return name[0]!.toLowerCase() + name.slice(1);
+}
+
+function normalizeFunctionParamName(name: string) {
+	return lowerFirst(name);
 }
 
 function escapeVariant(v: string): string {

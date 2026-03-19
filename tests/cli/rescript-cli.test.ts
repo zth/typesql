@@ -86,7 +86,8 @@ describe('ReScript CLI commands', function () {
 			};
 			assert.strictEqual(payload.ok, true);
 			assert.strictEqual(payload.command, 'generate');
-			assert.match(payload.data?.rescript || '', /let default = run/);
+			assert.match(payload.data?.rescript || '', /let query = run/);
+			assert.match(payload.data?.rescript || '', /let default = query/);
 		} finally {
 			cleanupFixture(fixture);
 		}
@@ -497,7 +498,8 @@ describe('ReScript CLI commands', function () {
 
 			const payload = JSON.parse(result.stdout.trim()) as { status: string; code?: string };
 			assert.strictEqual(payload.status, 'ok');
-			assert.match(payload.code || '', /let default = run/);
+			assert.match(payload.code || '', /let query = run/);
+			assert.match(payload.code || '', /let default = query/);
 		} finally {
 			cleanupFixture(fixture);
 		}
@@ -521,7 +523,8 @@ describe('ReScript CLI commands', function () {
 
 			const payload = JSON.parse(result.stdout.trim()) as { status: string; code?: string };
 			assert.strictEqual(payload.status, 'ok');
-			assert.match(payload.code || '', /let default = run/);
+			assert.match(payload.code || '', /let query = run/);
+			assert.match(payload.code || '', /let default = query/);
 		} finally {
 			cleanupFixture(fixture);
 		}
@@ -548,7 +551,8 @@ describe('ReScript CLI commands', function () {
 			};
 			assert.strictEqual(rescriptResponse.ok, true);
 			assert.strictEqual(rescriptResponse.action, 'rescript');
-			assert.match(rescriptResponse.rescript || '', /let default = run/);
+			assert.match(rescriptResponse.rescript || '', /let query = run/);
+			assert.match(rescriptResponse.rescript || '', /let default = query/);
 
 			child.stdin.write(JSON.stringify({ action: 'shutdown' }) + '\n');
 
@@ -590,7 +594,8 @@ describe('ReScript CLI commands', function () {
 			};
 			assert.strictEqual(response.ok, true);
 			assert.strictEqual(response.action, 'rescript');
-			assert.match(response.rescript || '', /let default = run/);
+			assert.match(response.rescript || '', /let query = run/);
+			assert.match(response.rescript || '', /let default = query/);
 
 			child.stdin.write(JSON.stringify({ action: 'shutdown' }) + '\n');
 			const shutdown = JSON.parse(await nextStdoutLine()) as { ok: boolean; action: string };

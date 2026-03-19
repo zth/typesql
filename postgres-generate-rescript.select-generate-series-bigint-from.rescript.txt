@@ -19,8 +19,9 @@ type selectGenerateSeriesBigintFromResult = {
 }
 
 external selectGenerateSeriesBigintFrom: (Pg.client) => promise<array<selectGenerateSeriesBigintFromResult>> = "selectGenerateSeriesBigintFrom"
-let run: (Pg.client) => promise<array<selectGenerateSeriesBigintFromResult>> = (db) => {
-  selectGenerateSeriesBigintFrom(db)
+let run: (Pg.client) => promise<array<selectGenerateSeriesBigintFromResult>> = (client) => {
+  selectGenerateSeriesBigintFrom(client)
 }
 
-let default = run
+let query = run
+let default = query

@@ -41,6 +41,8 @@
 		"pg": "^8.16.3",
 		"pg-copy-streams": "^6.0.6",
 		"prettier": "^3.6.2",
+		"rescript": "^12.2.0",
+		"rescript-embed-lang": "^0.5.5",
 		"shx": "^0.3.4",
 		"ts-node": "^10.9.2",
 		"typescript": "^5.9.2"
@@ -52,6 +54,7 @@
 		"chokidar": "^3.6.0",
 		"code-block-writer": "^13.0.3",
 		"dotenv": "^17.2.2",
+		"dprint-node": "^1.0.8",
 		"fp-ts": "^2.16.11",
 		"glob": "^11.0.3",
 		"libsql": "^0.4.7",
@@ -60,8 +63,7 @@
 		"mysql2": "^3.14.5",
 		"neverthrow": "^8.2.0",
 		"postgres": "^3.4.7",
-		"yargs": "^17.7.2",
 		"ts-blank-space": "^0.6.2",
-		"dprint-node": "^1.0.8"
+		"yargs": "^17.7.2"
 	}
 }

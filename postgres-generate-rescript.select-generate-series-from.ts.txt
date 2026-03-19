@@ -1,0 +1,20 @@
+import type pg from 'pg';
+
+export type SelectGenerateSeriesFromResult = {
+	g: int | null;
+}
+
+export async function selectGenerateSeriesFrom(client: pg.Client | pg.Pool | pg.PoolClient): Promise<SelectGenerateSeriesFromResult[]> {
+	const sql = `
+	SELECT * FROM generate_series(1, 5) AS g
+	`
+	return client.query({ text: sql, rowMode: 'array' })
+		.then(res => res.rows.map(row => mapArrayToSelectGenerateSeriesFromResult(row)));
+}
+
+function mapArrayToSelectGenerateSeriesFromResult(data: any) {
+	const result: SelectGenerateSeriesFromResult = {
+		g: data[0]
+	}
+	return result;
+}

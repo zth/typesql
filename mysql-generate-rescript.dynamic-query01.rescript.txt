@@ -171,7 +171,7 @@ and dynamicQuery01Where =
 | Description_between(betweenOperator, Null.t<string>, Null.t<string>)
 
 external dynamicQuery01: (connection, dynamicQuery01DynamicParams) => promise<array<dynamicQuery01Result>> = "dynamicQuery01"
-let run: (connection, dynamicQuery01DynamicParams) => promise<array<dynamicQuery01Result>> = (db, params) => {
+let run: (connection, dynamicQuery01DynamicParams) => promise<array<dynamicQuery01Result>> = (connection, params) => {
   let params = {
     ...params,
     where: ?switch params.where {
@@ -197,7 +197,8 @@ let run: (connection, dynamicQuery01DynamicParams) => promise<array<dynamicQuery
     | None => None
     },
   }
-  dynamicQuery01(db, params)
+  dynamicQuery01(connection, params)
 }
 
-let default = run
+let query = run
+let default = query

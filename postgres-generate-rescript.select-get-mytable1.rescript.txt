@@ -21,8 +21,9 @@ type selectGetMytable1Result = {
 }
 
 external selectGetMytable1: (Pg.client) => promise<array<selectGetMytable1Result>> = "selectGetMytable1"
-let run: (Pg.client) => promise<array<selectGetMytable1Result>> = (db) => {
-  selectGetMytable1(db)
+let run: (Pg.client) => promise<array<selectGetMytable1Result>> = (client) => {
+  selectGetMytable1(client)
 }
 
-let default = run
+let query = run
+let default = query

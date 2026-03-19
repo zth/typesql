@@ -28,6 +28,8 @@ import {
 	type RescriptErrorCode
 } from './response';
 import { generateReScriptWithClient, openRescriptContext, withRescriptContext } from './service';
+import { syncRescriptEmbeds } from '../rescript-embed/sync';
+import { printSyncErrors, printSyncSummary, watchRescriptEmbeds } from '../rescript-embed/watch';
 
 type BaseArgs = {
 	config: string;
@@ -82,6 +84,20 @@ const daemonCommandModule: CommandModule = {
 	handler: (args) => handleDaemonCommand(parseDaemonArgs(args))
 };
 
+const syncCommandModule: CommandModule = {
+	command: 'sync',
+	describe: 'Generate `__typesql.res` files for `%generated.typesql` embeds.',
+	builder: buildSyncCommand,
+	handler: (args) => handleSyncCommand(parseBaseArgs(args))
+};
+
+const watchCommandModule: CommandModule = {
+	command: 'watch',
+	describe: 'Watch ReScript source files and keep generated `__typesql.res` files in sync.',
+	builder: buildWatchCommand,
+	handler: (args) => handleWatchCommand(parseBaseArgs(args))
+};
+
 const checkCommandModule: CommandModule = {
 	command: 'check',
 	describe: 'Validate a ReScript embedded query and describe the expected variable shape.',
@@ -133,6 +149,8 @@ export function registerRescriptCommands(yargs: Argv) {
 				rescriptYargs
 					.command(generateCommandModule)
 					.command(daemonCommandModule)
+					.command(syncCommandModule)
+					.command(watchCommandModule)
 					.command(checkCommandModule)
 					.command(inspectCommandModule)
 					.command(explainCommandModule)
@@ -228,6 +246,20 @@ function buildInspectCommand(yargs: Argv) {
 		);
 }
 
+function buildSyncCommand(yargs: Argv) {
+	return yargs.example(
+		'$0 rescript sync --config ./typesql.json',
+		'Extract `%generated.typesql` blocks from configured ReScript sources and generate `__typesql.res` files.'
+	);
+}
+
+function buildWatchCommand(yargs: Argv) {
+	return yargs.example(
+		'$0 rescript watch --config ./typesql.json',
+		'Watch configured ReScript sources and keep generated `__typesql.res` files synchronized.'
+	);
+}
+
 function buildExplainCommand(yargs: Argv) {
 	return addVariableOptions(addSqlCommandOptions(yargs))
 		.option('analyze', {
@@ -288,6 +320,36 @@ async function handleDaemonCommand(args: DaemonArgs) {
 			return;
 		}
 		startSocketDaemon(args.socket || '/tmp/typesql.sock', context.dbClient, context.schemaInfo, context.close);
+	} catch (error: unknown) {
+		console.error(`Error: ${errorMessage(error)}.`);
+		process.exitCode = 1;
+	}
+}
+
+async function handleSyncCommand(args: BaseArgs) {
+	loadEnvFileIfPresent(args.envFile);
+	try {
+		const result = await withRescriptContext(args.config, syncRescriptEmbeds);
+		printSyncSummary(result.summary);
+		printSyncErrors(result.errors);
+		if (result.errors.length > 0) {
+			process.exitCode = 1;
+		}
+	} catch (error: unknown) {
+		console.error(`Error: ${errorMessage(error)}.`);
+		process.exitCode = 1;
+	}
+}
+
+async function handleWatchCommand(args: BaseArgs) {
+	loadEnvFileIfPresent(args.envFile);
+	try {
+		const context = await openRescriptContext(args.config);
+		try {
+			await watchRescriptEmbeds(context);
+		} finally {
+			await context.close();
+		}
 	} catch (error: unknown) {
 		console.error(`Error: ${errorMessage(error)}.`);
 		process.exitCode = 1;
@@ -449,6 +511,8 @@ Use these commands for SQL embedded through the ReScript integration. The debug 
 Commands:
   typesql rescript generate   Generate embedded ReScript code from SQL
   typesql rescript daemon     Start the long-lived ReScript daemon
+  typesql rescript sync       Generate __typesql.res files from %generated.typesql embeds
+  typesql rescript watch      Watch ReScript sources and keep __typesql.res files synchronized
   typesql rescript check      Validate SQL and describe the expected variables
   typesql rescript inspect    Show prepared SQL, final SQL, and bind values
   typesql rescript explain    Run EXPLAIN or EXPLAIN ANALYZE for a resolved query
@@ -457,6 +521,8 @@ Commands:
 Use each command for:
   generate: create the embedded ReScript module for a query
   daemon: keep one database connection warm for tooling
+  sync: extract and generate embedded ReScript modules for an entire source tree
+  watch: keep generated embedded ReScript modules up to date while you edit
   check: learn the variable shape before supplying values
   inspect: chase query-shape and binding issues
   explain: inspect plan shape and performance characteristics
@@ -464,6 +530,8 @@ Use each command for:
 
 Examples:
   typesql rescript generate --config ./typesql.json --name selectUsers --sql "select id, name from users where id = :id"
+  typesql rescript sync --config ./typesql.json
+  typesql rescript watch --config ./typesql.json
   typesql rescript check --config ./typesql.json --name selectUsers --sql "select id, name from users where id = :id"
   typesql rescript inspect --config ./typesql.json --name selectUsers --sql "select id, name from users where id = :id"
   typesql rescript inspect --config ./typesql.json --name selectUsers --sql "select id, name from users where id = :id" --vars '{"id":1}'

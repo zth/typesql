@@ -91,4 +91,5 @@ let run: (BetterSqlite3.client) => array<selectUserPostsNestedUsers> = (db) => {
   selectUserPostsNested(db)
 }
 
-let default = run
+let query = run
+let default = query
