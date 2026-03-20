@@ -20,7 +20,7 @@ function mapArrayToSelectBigintAndJsonResult(data) {
 ")
 
 type selectBigintAndJsonResult = {
-  big: Null.t<BigInt.t>,
+  big: Null.t<bigint>,
   payload: JSON.t,
   list: JSON.t
 }

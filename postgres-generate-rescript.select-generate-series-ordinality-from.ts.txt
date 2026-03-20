@@ -1,0 +1,22 @@
+import type pg from 'pg';
+
+export type SelectGenerateSeriesOrdinalityFromResult = {
+	value: int;
+	ord: bigint;
+}
+
+export async function selectGenerateSeriesOrdinalityFrom(client: pg.Client | pg.Pool | pg.PoolClient): Promise<SelectGenerateSeriesOrdinalityFromResult[]> {
+	const sql = `
+	SELECT * FROM generate_series(1, 5) WITH ORDINALITY AS g(value, ord)
+	`
+	return client.query({ text: sql, rowMode: 'array' })
+		.then(res => res.rows.map(row => mapArrayToSelectGenerateSeriesOrdinalityFromResult(row)));
+}
+
+function mapArrayToSelectGenerateSeriesOrdinalityFromResult(data: any) {
+	const result: SelectGenerateSeriesOrdinalityFromResult = {
+		value: data[0],
+		ord: data[1]
+	}
+	return result;
+}

@@ -85,6 +85,9 @@ function describeQueryRefine(describeParameters: DescribeParameters): Result<Pos
 				});
 			}
 		}
+		if (traverseResult.diagnostics?.length) {
+			descResult = traverseResult.diagnostics.reduce((acc, diagnostic) => addAnalysis(acc, 'degraded', diagnostic), descResult);
+		}
 		return ok(descResult);
 	} catch (error) {
 		return ok(addAnalysis(baselineSchema, 'describe-only', {

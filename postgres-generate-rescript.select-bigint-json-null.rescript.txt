@@ -22,7 +22,7 @@ function mapArrayToSelectBigintJsonNullResult(data) {
 ")
 
 type selectBigintJsonNullResult = {
-  big: Null.t<BigInt.t>,
+  big: Null.t<bigint>,
   payload: JSON.t,
   list: JSON.t,
   nothing: Null.t<string>

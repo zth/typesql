@@ -14,6 +14,7 @@ import { evaluatesTrueIfNull } from './case-nullability-checker';
 import { getOrderByColumns } from './util';
 import { findPostgresFunctionCandidates, resolvePostgresFunction, ResolvedFunctionMetadata, ResolvedTableColumn } from './function-resolution';
 import { classifyFunctionArgumentTypes } from './function-argument-classifier';
+import type { AnalysisDiagnostic } from '../analysis-types';
 
 export type NotNullInfo = {
 	schema: string;
@@ -43,6 +44,7 @@ export type PostgresTraverseResult = {
 	returning?: boolean;
 	relations?: Relation2[];
 	dynamicQueryInfo?: DynamicSqlInfo2;
+	diagnostics?: AnalysisDiagnostic[];
 }
 
 export type ParamInfo = {
@@ -60,6 +62,7 @@ type TraverseResult = {
 	parameters: ParamWithIndex[],
 	relations?: Relation2[];
 	dynamicQueryInfo?: DynamicSqlInfo2;
+	diagnostics?: AnalysisDiagnostic[];
 }
 
 type TraverseContext = {
@@ -99,12 +102,56 @@ export function defaultOptions(): TraverseOptions {
 	};
 }
 
+function createUnknownColumn(columnName = '?column?'): NotNullInfo {
+	return {
+		column_name: columnName,
+		is_nullable: true,
+		table: '',
+		schema: '',
+		type: 'unknown'
+	};
+}
+
+function addTraverseDiagnostic(traverseResult: TraverseResult, diagnostic: AnalysisDiagnostic) {
+	const diagnostics = traverseResult.diagnostics || (traverseResult.diagnostics = []);
+	const duplicated = diagnostics.some(existing => existing.code === diagnostic.code && existing.message === diagnostic.message);
+	if (!duplicated) {
+		diagnostics.push(diagnostic);
+	}
+}
+
+function isRecoverableTraverseError(error: unknown): error is Error {
+	if (!(error instanceof Error)) {
+		return false;
+	}
+	return error.message.startsWith('Column not found')
+		|| error.message.includes('Not expected:')
+		|| error.message.startsWith('Stmt not expected:')
+		|| error.message.startsWith('Stmt not supported:');
+}
+
+function createRecoverableExpressionResult(error: Error, traverseResult: TraverseResult): NotNullInfo {
+	addTraverseDiagnostic(traverseResult, {
+		code: error.message.startsWith('Column not found') ? 'postgres.unresolved_column' : 'postgres.unsupported_expression',
+		message: error.message
+	});
+	return createUnknownColumn();
+}
+
+function attachDiagnostics<T extends PostgresTraverseResult>(result: T, traverseResult: TraverseResult): T {
+	if (traverseResult.diagnostics?.length) {
+		result.diagnostics = traverseResult.diagnostics;
+	}
+	return result;
+}
+
 export function traverseSmt(stmt: StmtContext, dbSchema: PostgresColumnSchema[], checkConstraints: CheckConstraintResult, userFunctions: UserFunctionSchema[], builtinFunctions: PostgresBuiltinFunctionSchema[], options: TraverseOptions): PostgresTraverseResult {
 	const { collectNestedInfo = false, collectDynamicQueryInfo = false } = options;
 
 	const traverseResult: TraverseResult = {
 		columnsNullability: [],
-		parameters: []
+		parameters: [],
+		diagnostics: []
 	}
 	if (collectNestedInfo) {
 		traverseResult.relations = [];
@@ -206,7 +253,7 @@ function traverseSelectstmt(selectstmt: SelectstmtContext, context: TraverseCont
 	if (traverseResult.dynamicQueryInfo) {
 		postgresTraverseResult.dynamicQueryInfo = traverseResult.dynamicQueryInfo;
 	}
-	return postgresTraverseResult;
+	return attachDiagnostics(postgresTraverseResult, traverseResult);
 }
 
 function traverse_selectstmt(selectstmt: SelectstmtContext, context: TraverseContext, traverseResult: TraverseResult): FromResult {
@@ -523,14 +570,26 @@ function traverse_target_el(target_el: Target_elContext, context: TraverseContex
 			...(exprResult.jsonType != null && { jsonType: exprResult.jsonType })
 		};
 	}
-	throw Error('Column not found');
+	addTraverseDiagnostic(traverseResult, {
+		code: 'postgres.unsupported_target',
+		message: 'Unsupported SELECT target element: ' + target_el.getText()
+	});
+	return createUnknownColumn();
 }
 
 function traverse_a_expr(a_expr: A_exprContext, context: TraverseContext, traverseResult: TraverseResult): NotNullInfo {
 	const a_expr_qual = a_expr.a_expr_qual();
 	if (a_expr_qual) {
-		const notNull = traverse_a_expr_qual(a_expr_qual, context, traverseResult);
-		return notNull;
+		try {
+			const notNull = traverse_a_expr_qual(a_expr_qual, context, traverseResult);
+			return notNull;
+		}
+		catch (error) {
+			if (isRecoverableTraverseError(error)) {
+				return createRecoverableExpressionResult(error, traverseResult);
+			}
+			throw error;
+		}
 	}
 	return {
 		column_name: '',
@@ -1744,6 +1803,24 @@ type FunctionTableAliasInfo = {
 	typedColumns: ResolvedTableColumn[];
 }
 
+function getTypedFunctionColumns(tablefuncelementlist: { tablefuncelement_list(): { colid(): ColidContext; typename(): { getText(): string } }[] } | null | undefined): ResolvedTableColumn[] {
+	return tablefuncelementlist?.tablefuncelement_list().map(element => ({
+		name: get_colid_text(element.colid()),
+		type: element.typename().getText()
+	})) || [];
+}
+
+function appendOrdinalityColumn(columns: NotNullInfo[], aliasInfo: FunctionTableAliasInfo, hasOrdinality: boolean): NotNullInfo[] {
+	if (!hasOrdinality) {
+		return columns;
+	}
+	const ordinalityAlias = aliasInfo.typedColumns[columns.length]?.name
+		|| aliasInfo.columnAliases[columns.length]
+		|| 'ordinality';
+	const ordinalityType = aliasInfo.typedColumns[columns.length]?.type || 'int8';
+	return columns.concat(createFunctionTableColumn(ordinalityAlias, ordinalityType, false));
+}
+
 function getFromColumns(tableName: TableName, withColumns: NotNullInfo[], dbSchema: PostgresColumnSchema[]) {
 	const filteredWithColumns = filterColumnsForTableName(withColumns, tableName);
 	if (filteredWithColumns.length > 0) {
@@ -1920,7 +1997,9 @@ function traverse_select_with_parens_or_func_table(tableRef: Table_refContext, c
 	if (func_table) {
 		const functionAliasInfo = getFunctionTableAliasInfo(tableRef);
 		const result = traverse_func_table(func_table, context, traverseResult, functionAliasInfo);
-		const resultWithAlias = result.columns.map(col => ({ ...col, table: functionAliasInfo.relationAlias || col.table } satisfies NotNullInfo));
+		const columnsWithOrdinality = appendOrdinalityColumn(result.columns, functionAliasInfo, func_table.ordinality_() != null);
+		const defaultTable = functionAliasInfo.relationAlias || columnsWithOrdinality[0]?.table || '';
+		const resultWithAlias = columnsWithOrdinality.map(col => ({ ...col, table: functionAliasInfo.relationAlias || col.table || defaultTable } satisfies NotNullInfo));
 		return {
 			columns: resultWithAlias,
 			singleRow: result.singleRow
@@ -2058,14 +2137,50 @@ function getFunctionTableAliasInfo(tableRef: Table_refContext): FunctionTableAli
 		|| funcAliasClause?.colid()?.getText()
 		|| '';
 	const columnAliases = funcAliasClause?.alias_clause()?.name_list()?.name_list()?.map(name => name.getText()) || [];
-	const typedColumns = funcAliasClause?.tablefuncelementlist()?.tablefuncelement_list().map(element => ({
-		name: get_colid_text(element.colid()),
-		type: element.typename().getText()
-	})) || [];
+	const typedColumns = getTypedFunctionColumns(funcAliasClause?.tablefuncelementlist());
 	return {
 		relationAlias,
 		columnAliases,
 		typedColumns
+	};
+}
+
+function getRowsFromItemAliasInfo(rowsfromItem: { col_def_list_(): { tablefuncelementlist(): { tablefuncelement_list(): { colid(): ColidContext; typename(): { getText(): string } }[] } } | null }): FunctionTableAliasInfo {
+	return {
+		relationAlias: '',
+		columnAliases: [],
+		typedColumns: getTypedFunctionColumns(rowsfromItem.col_def_list_()?.tablefuncelementlist())
+	};
+}
+
+function applyFunctionTableOutputAliases(columns: NotNullInfo[], aliasInfo: FunctionTableAliasInfo): NotNullInfo[] {
+	return columns.map((column, index) => {
+		const typedColumn = aliasInfo.typedColumns[index];
+		return {
+			...column,
+			column_name: typedColumn?.name || aliasInfo.columnAliases[index] || column.column_name,
+			type: typedColumn ? mapFunctionReturnTypeToPostgresType(typedColumn.type) : column.type
+		} satisfies NotNullInfo;
+	});
+}
+
+function createUnsupportedFunctionTableFallback(aliasInfo: FunctionTableAliasInfo, traverseResult: TraverseResult, message: string, singleRow = false): FromResult | null {
+	let columns: NotNullInfo[] | null = null;
+	if (aliasInfo.typedColumns.length > 0) {
+		columns = aliasInfo.typedColumns.map(column => createFunctionTableColumn(column.name, column.type));
+	} else if (aliasInfo.columnAliases.length > 0) {
+		columns = aliasInfo.columnAliases.map(columnAlias => createFunctionTableColumn(columnAlias, 'unknown'));
+	}
+	if (columns == null) {
+		return null;
+	}
+	addTraverseDiagnostic(traverseResult, {
+		code: 'postgres.unsupported_function_table',
+		message
+	});
+	return {
+		columns,
+		singleRow
 	};
 }
 
@@ -2074,6 +2189,14 @@ function traverse_func_table(func_table: Func_tableContext, context: TraverseCon
 	if (func_expr_windowless) {
 		const result = traverse_func_expr_windowless(func_expr_windowless, context, traverseResult, aliasInfo);
 		return result;
+	}
+	const rowsfrom_list = func_table.rowsfrom_list();
+	if (rowsfrom_list) {
+		return traverse_rowsfrom_list(rowsfrom_list, context, traverseResult, aliasInfo);
+	}
+	const fallbackResult = createUnsupportedFunctionTableFallback(aliasInfo, traverseResult, 'Stmt not supported: ' + func_table.getText());
+	if (fallbackResult) {
+		return fallbackResult;
 	}
 	throw Error('Stmt not supported: ' + func_table.getText());
 }
@@ -2095,6 +2218,24 @@ function parseArgumentList(argString: string): ArgumentType[] {
 				type: typeParts.join(' ') as PostgresSimpleType  // Handles multi-word types like "character varying"
 			};
 		});
+}
+
+function traverse_rowsfrom_list(rowsfrom_list: { rowsfrom_item_list(): { func_expr_windowless(): Func_expr_windowlessContext; col_def_list_(): { tablefuncelementlist(): { tablefuncelement_list(): { colid(): ColidContext; typename(): { getText(): string } }[] } } | null }[] }, context: TraverseContext, traverseResult: TraverseResult, aliasInfo: FunctionTableAliasInfo): FromResult {
+	const itemResults = rowsfrom_list.rowsfrom_item_list().map(rowsfromItem => {
+		const itemAliasInfo = getRowsFromItemAliasInfo(rowsfromItem);
+		return traverse_func_expr_windowless(rowsfromItem.func_expr_windowless(), context, traverseResult, itemAliasInfo);
+	});
+	// PostgreSQL null-pads shorter sources in multi-source ROWS FROM(...), so
+	// per-source non-null guarantees do not survive once rows are merged.
+	const mergedColumns = itemResults.flatMap(itemResult =>
+		itemResults.length > 1
+			? itemResult.columns.map(column => ({ ...column, is_nullable: true } satisfies NotNullInfo))
+			: itemResult.columns
+	);
+	return {
+		columns: applyFunctionTableOutputAliases(mergedColumns, aliasInfo),
+		singleRow: itemResults.every(itemResult => itemResult.singleRow)
+	};
 }
 
 function traverse_func_expr_windowless(func_expr_windowless: Func_expr_windowlessContext, context: TraverseContext, traverseResult: TraverseResult, aliasInfo: FunctionTableAliasInfo): FromResult {
@@ -2130,6 +2271,10 @@ function traverse_func_expr_windowless(func_expr_windowless: Func_expr_windowles
 			return candidateResult;
 		}
 	}
+	const fallbackResult = createUnsupportedFunctionTableFallback(aliasInfo, traverseResult, 'Stmt not supported: ' + func_expr_windowless.getText());
+	if (fallbackResult) {
+		return fallbackResult;
+	}
 	throw Error('Stmt not supported: ' + func_expr_windowless.getText());
 }
 
@@ -2143,6 +2288,10 @@ function traverseResolvedFunctionTable(functionInfo: ResolvedFunctionMetadata, c
 			columns: builtinColumns.map(column => ({ ...column, table: functionInfo.functionName, schema: functionInfo.schema } satisfies NotNullInfo)),
 			singleRow: !functionInfo.returnType.returnsSet
 		};
+	}
+	const fallbackResult = createUnsupportedFunctionTableFallback(aliasInfo, traverseResult, 'Stmt not supported: ' + functionInfo.functionName, !functionInfo.returnType.returnsSet);
+	if (fallbackResult) {
+		return fallbackResult;
 	}
 	throw Error('Stmt not supported: ' + functionInfo.functionName);
 }
@@ -2171,6 +2320,10 @@ function traverseResolvedUserFunctionTable(functionInfo: ResolvedFunctionMetadat
 			columns: functionColumns.map(column => ({ ...column, table: functionInfo.functionName, schema: functionInfo.schema } satisfies NotNullInfo)),
 			singleRow: !functionInfo.returnType.returnsSet
 		};
+	}
+	const fallbackResult = createUnsupportedFunctionTableFallback(aliasInfo, traverseResult, 'Stmt not supported: ' + functionInfo.functionName, !functionInfo.returnType.returnsSet);
+	if (fallbackResult) {
+		return fallbackResult;
 	}
 	throw Error('Stmt not supported: ' + functionInfo.functionName);
 }
@@ -2220,7 +2373,7 @@ function resolveFunctionTableColumns(functionInfo: ResolvedFunctionMetadata, dbS
 			}
 			const columnName = getScalarFunctionColumnName(functionInfo.functionName, aliasInfo);
 			const scalarType = mapFunctionReturnTypeToPostgresType(functionInfo.returnType.typeName);
-			return [createFunctionTableColumn(columnName, scalarType)];
+			return [createFunctionTableColumn(columnName, scalarType, isFunctionTableColumnNullable(functionInfo))];
 		}
 	}
 }
@@ -2239,14 +2392,30 @@ function getScalarFunctionColumnName(functionName: string, aliasInfo: FunctionTa
 	return aliasInfo.columnAliases[0] || aliasInfo.relationAlias || functionName;
 }
 
-function createFunctionTableColumn(columnName: string, typeName: string): NotNullInfo {
+function createFunctionTableColumn(columnName: string, typeName: string, isNullable = true): NotNullInfo {
 	return {
 		column_name: columnName,
 		type: mapFunctionReturnTypeToPostgresType(typeName),
-		is_nullable: true,
+		is_nullable: isNullable,
 		table: '',
 		schema: ''
 	};
+}
+
+function isFunctionTableColumnNullable(functionInfo: ResolvedFunctionMetadata): boolean {
+	return !isAlwaysNonNullScalarFunctionTable(functionInfo);
+}
+
+const NON_NULL_SCALAR_FUNCTION_TABLES = new Set([
+	'generate_series',
+	'generate_subscripts',
+	'json_object_keys',
+	'jsonb_object_keys'
+]);
+
+function isAlwaysNonNullScalarFunctionTable(functionInfo: ResolvedFunctionMetadata): boolean {
+	return functionInfo.schema.toLowerCase() === 'pg_catalog'
+		&& NON_NULL_SCALAR_FUNCTION_TABLES.has(functionInfo.functionName.toLowerCase());
 }
 
 function mapFunctionReturnTypeToPostgresType(typeName: string): PostgresSimpleType {
@@ -2410,7 +2579,8 @@ function paramIsList(c_expr: ParserRuleContext) {
 function traverseInsertstmt(insertstmt: InsertstmtContext, dbSchema: PostgresColumnSchema[]): PostgresTraverseResult {
 	const traverseResult: TraverseResult = {
 		columnsNullability: [],
-		parameters: []
+		parameters: [],
+		diagnostics: []
 	}
 	const insert_target = insertstmt.insert_target();
 	const tableName = splitName(insert_target.getText());
@@ -2456,7 +2626,7 @@ function traverseInsertstmt(insertstmt: InsertstmtContext, dbSchema: PostgresCol
 	if (returning_clause) {
 		result.returning = true;
 	}
-	return result;
+	return attachDiagnostics(result, traverseResult);
 }
 
 function traverseDeletestmt(deleteStmt: DeletestmtContext, dbSchema: PostgresColumnSchema[], traverseResult: TraverseResult): PostgresTraverseResult {
@@ -2496,7 +2666,7 @@ function traverseDeletestmt(deleteStmt: DeletestmtContext, dbSchema: PostgresCol
 	if (returning_clause) {
 		result.returning = true;
 	}
-	return result;
+	return attachDiagnostics(result, traverseResult);
 }
 
 function addConstraintIfNotNull(checkConstraint: PostgresEnumType | undefined): { checkConstraint: PostgresEnumType } | undefined {
@@ -2552,7 +2722,7 @@ function traverseUpdatestmt(updatestmt: UpdatestmtContext, traverseContext: Trav
 	if (returning_clause) {
 		result.returning = true;
 	}
-	return result;
+	return attachDiagnostics(result, traverseResult);
 }
 
 function traverse_set_clause(set_clause: Set_clauseContext, context: TraverseContext, traverseResult: TraverseResult): void {
@@ -3179,13 +3349,13 @@ function traverseCopystmt(copyStmt: CopystmtContext, dbSchema: PostgresColumnSch
 	const columnlist = column_list_ != null ? column_list_.columnlist().columnElem_list()
 		.map(columnElem => traverse_columnElem(columnElem, copyColumns, traverseResult)) : copyColumns;
 
-	return {
+	return attachDiagnostics({
 		queryType: 'Copy',
 		columns: columnlist,
 		multipleRowsResult: false,
 		parameterList: [],
 		parametersNullability: []
-	}
+	}, traverseResult);
 }
 
 function traverse_columnElem(columnElem: ColumnElemContext, fromColumns: PostgresColumnSchema[], traverseResult: TraverseResult): NotNullInfo {

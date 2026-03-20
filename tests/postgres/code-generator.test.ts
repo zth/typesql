@@ -228,6 +228,18 @@ FROM mytable1 t1
 		assert.deepStrictEqual(actual.value, expected);
 	});
 
+	it('select-rows-from - multi-source function table', async () => {
+		const sql = 'SELECT * FROM ROWS FROM (generate_series(1,3), generate_series(10,12)) AS t(a,b)';
+
+		const actual = await generateCode(dialect, sql, 'selectRowsFrom', schemaInfo);
+		const expected = readFileSync('tests/postgres/expected-code/select-rows-from.ts.txt', 'utf-8');
+
+		if (actual.isErr()) {
+			assert.fail(`Shouldn\'t return an error: ${actual.error.description}`);
+		}
+		assert.deepStrictEqual(actual.value, expected);
+	});
+
 	it('insert01 - INSERT INTO mytable1(value) values(10)', async () => {
 		const sql = 'INSERT INTO mytable1(value) values(10)';
 

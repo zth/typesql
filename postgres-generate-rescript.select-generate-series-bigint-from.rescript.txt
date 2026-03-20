@@ -15,7 +15,7 @@ function mapArrayToSelectGenerateSeriesBigintFromResult(data) {
 ")
 
 type selectGenerateSeriesBigintFromResult = {
-  g: Null.t<BigInt.t>
+  g: bigint
 }
 
 external selectGenerateSeriesBigintFrom: (Pg.client) => promise<array<selectGenerateSeriesBigintFromResult>> = "selectGenerateSeriesBigintFrom"

@@ -1,0 +1,29 @@
+%%raw("async function selectGenerateSeriesOrdinalityFrom(client) {
+  const sql = `
+	SELECT * FROM generate_series(1, 5) WITH ORDINALITY AS g(value, ord)
+	`
+  return client.query({ text: sql, rowMode: 'array' })
+    .then((res) => res.rows.map((row) => mapArrayToSelectGenerateSeriesOrdinalityFromResult(row)))
+}
+
+function mapArrayToSelectGenerateSeriesOrdinalityFromResult(data) {
+  const result = {
+    value: data[0],
+    ord: data[1],
+  }
+  return result
+}
+")
+
+type selectGenerateSeriesOrdinalityFromResult = {
+  value: int,
+  ord: bigint
+}
+
+external selectGenerateSeriesOrdinalityFrom: (Pg.client) => promise<array<selectGenerateSeriesOrdinalityFromResult>> = "selectGenerateSeriesOrdinalityFrom"
+let run: (Pg.client) => promise<array<selectGenerateSeriesOrdinalityFromResult>> = (client) => {
+  selectGenerateSeriesOrdinalityFrom(client)
+}
+
+let query = run
+let default = query

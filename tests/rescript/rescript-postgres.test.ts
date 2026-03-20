@@ -238,6 +238,46 @@ AND m2.descr = :description`;
 		assert.equal(rescript, fs.readFileSync('postgres-generate-rescript.select-generate-series-bigint-from.rescript.txt', 'utf8'));
 	});
 
+	it('generates code for function tables with ordinality', async () => {
+		const sql = 'SELECT * FROM generate_series(1, 5) WITH ORDINALITY AS g(value, ord)';
+
+		const queryName = 'selectGenerateSeriesOrdinalityFrom';
+		const { rescript, originalTs } = await generateReScriptFromPostgres({
+			sql,
+			queryName,
+			isCrudFile: false,
+			databaseClient,
+			schemaInfo
+		});
+
+		if (WRITE_FILES) {
+			fs.writeFileSync('postgres-generate-rescript.select-generate-series-ordinality-from.rescript.txt', rescript);
+			fs.writeFileSync('postgres-generate-rescript.select-generate-series-ordinality-from.ts.txt', originalTs);
+		}
+
+		assert.equal(rescript, fs.readFileSync('postgres-generate-rescript.select-generate-series-ordinality-from.rescript.txt', 'utf8'));
+	});
+
+	it('generates code for multi-source ROWS FROM function tables', async () => {
+		const sql = 'SELECT * FROM ROWS FROM (generate_series(1,3), generate_series(10,12)) AS t(a,b)';
+
+		const queryName = 'selectRowsFrom';
+		const { rescript, originalTs } = await generateReScriptFromPostgres({
+			sql,
+			queryName,
+			isCrudFile: false,
+			databaseClient,
+			schemaInfo
+		});
+
+		if (WRITE_FILES) {
+			fs.writeFileSync('postgres-generate-rescript.select-rows-from.rescript.txt', rescript);
+			fs.writeFileSync('postgres-generate-rescript.select-rows-from.ts.txt', originalTs);
+		}
+
+		assert.equal(rescript, fs.readFileSync('postgres-generate-rescript.select-rows-from.rescript.txt', 'utf8'));
+	});
+
 	it('generates code for unnest function tables with alias columns', async () => {
 		const sql = 'SELECT * FROM unnest(ARRAY[1, 2, 3]) AS t(id)';
 

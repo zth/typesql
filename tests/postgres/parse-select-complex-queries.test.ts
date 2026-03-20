@@ -808,22 +808,22 @@ describe('parse-select-complex-queries', () => {
 				{
 					name: 'id',
 					type: 'int4',
-					notNull: false,
-					table: ''
+					notNull: true,
+					table: 'cte'
 				},
 				{
 					name: 'level',
 					type: 'int4',
 					notNull: false,
-					table: ''
+					table: 'cte'
 				}
 			],
 			parameters: [],
 			analysis: {
-				mode: 'describe-only',
+				mode: 'degraded',
 				diagnostics: [
 					{
-						code: 'postgres.describe_only_fallback',
+						code: 'postgres.unresolved_column',
 						message: 'Column not found: level'
 					}
 				]

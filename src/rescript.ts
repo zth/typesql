@@ -783,7 +783,7 @@ function printRsType(t: IRType, clientType: DatabaseClient['type'], ir: Rescript
 		case 'bool':
 			return 'bool';
 		case 'bigint':
-			return 'BigInt.t';
+			return 'bigint';
 		case 'date':
 			return 'Date.t';
 		case 'bytes':
@@ -1033,7 +1033,7 @@ function formatUnionMemberForComment(t: IRType, clientType: DatabaseClient['type
 		case 'bool':
 			return t.kind;
 		case 'bigint':
-			return 'BigInt';
+			return 'bigint';
 		case 'date':
 			return 'Date';
 		case 'bytes':
