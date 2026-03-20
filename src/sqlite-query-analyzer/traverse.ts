@@ -27,6 +27,7 @@ import {
 	getOrderByColumns
 } from '../mysql-query-analyzer/traverse';
 import type { Relation2 } from './sqlite-describe-nested-query';
+import type { SQLiteType } from './types';
 import { type Either, left, right } from 'fp-ts/lib/Either';
 import type { TypeSqlError } from '../types';
 import type { ParserRuleContext } from '@wsporto/typesql-parser';
@@ -201,6 +202,23 @@ function mapTypeAndNullInferToColumnDef(col: TypeAndNullInfer, name?: string, ta
 		tableAlias: '',
 		hidden: col.hidden || 0
 	};
+}
+
+function inferSqliteAffinityType(typeName: string): SQLiteType {
+	const normalized = typeName.toUpperCase();
+	if (normalized.includes('INT')) {
+		return 'INTEGER';
+	}
+	if (normalized.includes('CHAR') || normalized.includes('CLOB') || normalized.includes('TEXT')) {
+		return 'TEXT';
+	}
+	if (normalized === '' || normalized.includes('BLOB') || normalized.includes('NONE')) {
+		return 'BLOB';
+	}
+	if (normalized.includes('REAL') || normalized.includes('FLOA') || normalized.includes('DOUB')) {
+		return 'REAL';
+	}
+	return 'NUMERIC';
 }
 
 function traverse_select_core(
@@ -589,6 +607,29 @@ function traverse_expr(expr: ExprContext, traverseContext: TraverseContext): Typ
 		const exprRight = expr.expr(0);
 		return traverse_expr(exprRight, traverseContext);
 	}
+	if (expr.COLLATE_()) {
+		const collatedExpr = expr.expr(0);
+		const collatedExprType = traverse_expr(collatedExpr, traverseContext);
+		return {
+			...collatedExprType,
+			table: collatedExprType.table || ''
+		};
+	}
+	if (expr.CAST_()) {
+		const castExpr = expr.expr(0);
+		const castExprType = traverse_expr(castExpr, traverseContext);
+		const castType = inferSqliteAffinityType(expr.type_name()?.getText() ?? '');
+		if (castExprType.name === '?' && castExprType.type.kind === 'TypeVar') {
+			castExprType.type.type = castType;
+		}
+		const resultType = freshVar(expr.getText(), castType);
+		return {
+			name: resultType.name,
+			type: resultType,
+			notNull: castExprType.notNull,
+			table: resultType.table || ''
+		};
+	}
 	const parameter = expr.BIND_PARAMETER();
 	if (parameter) {
 		const param = freshVar('?', '?');
@@ -741,6 +782,16 @@ function traverse_expr(expr: ExprContext, traverseContext: TraverseContext): Typ
 			table: type.table || ''
 		};
 	}
+	if (expr.ISNULL_() || expr.NOTNULL_()) {
+		traverse_expr(expr.expr(0), traverseContext);
+		const type = freshVar(expr.getText(), 'INTEGER');
+		return {
+			name: type.name,
+			type: type,
+			notNull: true,
+			table: type.table || ''
+		};
+	}
 	if (expr.ASSIGN()) {
 		//=
 		const exprLeft = expr.expr(0);
@@ -867,7 +918,7 @@ function traverse_expr(expr: ExprContext, traverseContext: TraverseContext): Typ
 			table: type.table || ''
 		};
 	}
-	if (expr.LIKE_() || expr.GLOB_()) {
+	if (expr.LIKE_() || expr.GLOB_() || expr.REGEXP_()) {
 		const exprLeft = expr.expr(0);
 		const exprRight = expr.expr(1);
 
@@ -890,6 +941,18 @@ function traverse_expr(expr: ExprContext, traverseContext: TraverseContext): Typ
 			type1: typeLeft.type,
 			type2: freshVar(expr.getText(), 'TEXT')
 		});
+		if (expr.ESCAPE_()) {
+			const escapeExpr = expr.expr(2);
+			const escapeType = traverse_expr(escapeExpr, traverseContext);
+			if (escapeType.name === '?') {
+				escapeType.notNull = true;
+			}
+			traverseContext.constraints.push({
+				expression: escapeExpr.getText(),
+				type1: escapeType.type,
+				type2: freshVar(escapeExpr.getText(), 'TEXT')
+			});
+		}
 		const type = freshVar(expr.getText(), 'INTEGER');
 		return {
 			name: type.name,
@@ -905,6 +968,18 @@ function traverse_expr(expr: ExprContext, traverseContext: TraverseContext): Typ
 		if (typeRight.name === '?') {
 			typeRight.notNull = true;
 			typeRight.type = freshVar(exprRight.getText(), 'TEXT');
+		}
+		if (expr.ESCAPE_()) {
+			const escapeExpr = expr.expr(2);
+			const escapeType = traverse_expr(escapeExpr, traverseContext);
+			if (escapeType.name === '?') {
+				escapeType.notNull = true;
+			}
+			traverseContext.constraints.push({
+				expression: escapeExpr.getText(),
+				type1: escapeType.type,
+				type2: freshVar(escapeExpr.getText(), 'TEXT')
+			});
 		}
 
 		const type = freshVar(expr.getText(), 'INTEGER');
@@ -1752,7 +1827,15 @@ function traverse_function(expr: ExprContext, function_name: string, traverseCon
 			table: ''
 		};
 	}
-	throw Error(`traverse_expr: function not supported:${function_name}`);
+	expr.expr_list().forEach((exprParam) => {
+		traverse_expr(exprParam, traverseContext);
+	});
+	return {
+		name: expr.getText(),
+		type: freshVar(expr.getText(), 'any'),
+		notNull: false,
+		table: ''
+	};
 }
 
 function extractOriginalSql(rule: ParserRuleContext) {
