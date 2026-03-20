@@ -84,6 +84,44 @@ FROM XMLTABLE('/rows/row'
 		]);
 	});
 
+	it('returns full analysis for json_each without explicit column aliases', async () => {
+		const sql = `SELECT * FROM json_each('{"a":1}'::json) AS t`;
+		const actual = await describeQuery(client, sql, schemaInfo);
+
+		if (actual.isErr()) {
+			assert.fail(`Should not fail outright: ${actual.error.description}`);
+		}
+
+		const value = actual.value as any;
+		assert.strictEqual(value.analysis, undefined);
+		assert.deepStrictEqual(value.columns, [
+			{
+				name: 'key',
+				type: 'text',
+				notNull: false,
+				table: 't'
+			},
+			{
+				name: 'value',
+				type: 'json',
+				notNull: false,
+				table: 't'
+			}
+		]);
+	});
+
+	it('generateCode keeps json_each on the full semantic path', async () => {
+		const sql = `SELECT * FROM json_each('{"a":1}'::json) AS t`;
+		const actual = await generateCode({ type: 'pg', client }, sql, 'selectJsonEach', schemaInfo);
+
+		if (actual.isErr()) {
+			assert.fail(`Should not fail outright: ${actual.error.description}`);
+		}
+
+		assert.ok(!actual.value.includes('degraded analysis mode'));
+		assert.ok(actual.value.includes('export async function selectJsonEach'));
+	});
+
 	it('generateCode emits a degraded warning for fallback analysis', async () => {
 		const sql = `SELECT *
 FROM XMLTABLE('/rows/row'
@@ -99,7 +137,7 @@ FROM XMLTABLE('/rows/row'
 		assert.ok(actual.value.includes('export async function selectGenerateSeries'));
 	});
 
-	it('keeps recursive CTE analysis in degraded mode instead of describe-only', async () => {
+	it('keeps recursive CTE analysis on the full semantic path', async () => {
 		const sql = `
 			WITH RECURSIVE cte as (
 				SELECT     t1.id, 0 as level
@@ -121,13 +159,7 @@ FROM XMLTABLE('/rows/row'
 		}
 
 		const value = actual.value as any;
-		assert.strictEqual(value.analysis?.mode, 'degraded');
-		assert.deepStrictEqual(value.analysis?.diagnostics, [
-			{
-				code: 'postgres.unresolved_column',
-				message: 'Column not found: level'
-			}
-		]);
+		assert.strictEqual(value.analysis, undefined);
 		assert.deepStrictEqual(value.columns, [
 			{
 				name: 'id',
@@ -138,13 +170,13 @@ FROM XMLTABLE('/rows/row'
 			{
 				name: 'level',
 				type: 'int4',
-				notNull: false,
+				notNull: true,
 				table: 'cte'
 			}
 		]);
 	});
 
-	it('generateCode emits a degraded warning for traversal fallback analysis', async () => {
+	it('generateCode keeps recursive CTE analysis off the degraded fallback path', async () => {
 		const sql = `
 			WITH RECURSIVE cte as (
 				SELECT     t1.id, 0 as level
@@ -165,7 +197,7 @@ FROM XMLTABLE('/rows/row'
 			assert.fail(`Should not fail outright: ${actual.error.description}`);
 		}
 
-		assert.ok(actual.value.includes('degraded analysis mode'));
+		assert.ok(!actual.value.includes('degraded analysis mode'));
 		assert.ok(actual.value.includes('export async function selectRecursiveCte'));
 	});
 

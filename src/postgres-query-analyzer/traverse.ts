@@ -14,6 +14,7 @@ import { evaluatesTrueIfNull } from './case-nullability-checker';
 import { getOrderByColumns } from './util';
 import { findPostgresFunctionCandidates, resolvePostgresFunction, ResolvedFunctionMetadata, ResolvedTableColumn } from './function-resolution';
 import { classifyFunctionArgumentTypes } from './function-argument-classifier';
+import { getBuiltinRecordFunctionColumns, isAlwaysNonNullScalarFunctionTable } from './builtin-function-shapes';
 import type { AnalysisDiagnostic } from '../analysis-types';
 
 export type NotNullInfo = {
@@ -442,7 +443,11 @@ function traverse_simple_select_pramary(simple_select_pramary: Simple_select_pra
 		traverse_a_expr(having_expr, newContext, traverseResult);
 	}
 
-	const filteredColumns = filterColumns_simple_select_pramary(simple_select_pramary, { ...context, fromColumns: fromResult.columns, parentColumns: context.fromColumns }, traverseResult);
+	const filteredColumns = filterColumns_simple_select_pramary(simple_select_pramary, {
+		...context,
+		fromColumns: fromResult.columns,
+		parentColumns: context.fromColumns
+	}, traverseResult);
 	const orderByColumns: string[] = getOrderByColumns(fromResult.columns, filteredColumns);
 	return {
 		columns: filteredColumns,
@@ -524,7 +529,13 @@ function traverse_target_list(target_list: Target_listContext, context: Traverse
 			}
 			return columns;
 		}
-		const column = traverse_target_el(target_el, context, traverseResult);
+		const column = traverse_target_el(target_el, {
+			...context,
+			// Keep `*` expansion bound to the local FROM list, but allow
+			// expression targets to fall back to inherited recursive /
+			// correlated scope when local resolution is incomplete.
+			fromColumns: context.fromColumns.concat(context.parentColumns)
+		}, traverseResult);
 		if (isParameter(column.column_name)) {
 			traverseResult.parameters.at(-1)!.isNotNull = !context.parentColumns[index].is_nullable;
 		}
@@ -1927,14 +1938,24 @@ function traverse_table_ref(table_ref: Table_refContext, context: TraverseContex
 	}
 	else if (table_ref.LATERAL_P()) {
 		const newContext: TraverseContext = { ...context, collectDynamicQueryInfo: false };
+		const numParamsBefore = traverseResult.parameters.length;
 		const lateralJoinResult = traverse_select_with_parens_or_func_table(table_ref, newContext, traverseResult);
 		allColumns.push(...lateralJoinResult.columns);
 		singleRow = false;
+		if (context.collectDynamicQueryInfo && traverseResult.dynamicQueryInfo!.from.length == 0) {
+			const parameters = getParametersIndexes(traverseResult.parameters.slice(numParamsBefore));
+			collectDynamicQueryInfoTableRef(table_ref, null, null, lateralJoinResult.columns, parameters, traverseResult);
+		}
 	}
 	else if (table_ref.select_with_parens() || table_ref.func_table()) {
+		const numParamsBefore = traverseResult.parameters.length;
 		const select_with_parens_or_func_result = traverse_select_with_parens_or_func_table(table_ref, context, traverseResult);
 		allColumns.push(...select_with_parens_or_func_result.columns);
 		singleRow = select_with_parens_or_func_result.singleRow;
+		if (context.collectDynamicQueryInfo && traverseResult.dynamicQueryInfo!.from.length == 0) {
+			const parameters = getParametersIndexes(traverseResult.parameters.slice(numParamsBefore));
+			collectDynamicQueryInfoTableRef(table_ref, null, null, select_with_parens_or_func_result.columns, parameters, traverseResult);
+		}
 	}
 	else if (table_ref.OPEN_PAREN()) {
 		const table_ref2 = table_ref.table_ref(0);
@@ -2000,6 +2021,9 @@ function traverse_select_with_parens_or_func_table(tableRef: Table_refContext, c
 		const columnsWithOrdinality = appendOrdinalityColumn(result.columns, functionAliasInfo, func_table.ordinality_() != null);
 		const defaultTable = functionAliasInfo.relationAlias || columnsWithOrdinality[0]?.table || '';
 		const resultWithAlias = columnsWithOrdinality.map(col => ({ ...col, table: functionAliasInfo.relationAlias || col.table || defaultTable } satisfies NotNullInfo));
+		if (context.collectNestedInfo) {
+			collectFunctionTableRelationInfo(tableRef, resultWithAlias, result.singleRow, traverseResult);
+		}
 		return {
 			columns: resultWithAlias,
 			singleRow: result.singleRow
@@ -2022,6 +2046,25 @@ function traverse_select_with_parens_or_func_table(tableRef: Table_refContext, c
 		};
 	}
 	throw Error('Stmt not expected:' + tableRef.getText());
+}
+
+function collectFunctionTableRelationInfo(tableRef: Table_refContext, columns: NotNullInfo[], singleRow: boolean, traverseResult: TraverseResult) {
+	const relationName = getDynamicQueryFunctionTableName(tableRef)
+		|| columns[0]?.table
+		|| 'function_table';
+	const aliasInfo = getFunctionTableAliasInfo(tableRef);
+	const relationAlias = aliasInfo.relationAlias;
+	const joinColumn = columns[0]?.column_name || relationAlias || relationName;
+	const relation: Relation2 = {
+		name: relationName,
+		alias: relationAlias,
+		renameAs: relationAlias !== '',
+		parentRelation: '',
+		joinColumn,
+		cardinality: singleRow ? 'one' : 'many',
+		parentCardinality: 'one'
+	};
+	traverseResult.relations?.push(relation);
 }
 
 type Join = {
@@ -2053,25 +2096,54 @@ function extractJoins(table_ref: Table_refContext): Join[] {
 
 function collectDynamicQueryInfoTableRef(table_ref: Table_refContext, joinType: Join_typeContext | null,
 	joinQual: Join_qualContext | null, columns: NotNullInfo[], parameters: number[], traverseResult: TraverseResult) {
-	const alias = table_ref.alias_clause() ? extractOriginalSql(table_ref.alias_clause()) : '';
-	const fromExpr = extractOriginalSql(table_ref.relation_expr() || table_ref.select_with_parens());
-	const tableName = table_ref.relation_expr()?.getText() || alias;
+	const relation_expr = table_ref.relation_expr();
+	const select_with_parens = table_ref.select_with_parens();
+	const func_table = table_ref.func_table();
+	const aliasClause = table_ref.alias_clause();
+	const funcAliasClause = table_ref.func_alias_clause();
+	const functionAliasInfo = func_table ? getFunctionTableAliasInfo(table_ref) : null;
+	const aliasText = aliasClause ? extractOriginalSql(aliasClause) : (funcAliasClause ? extractOriginalSql(funcAliasClause) : '');
+	const relationAlias = aliasClause?.colid()?.getText() || functionAliasInfo?.relationAlias || '';
+	const fromExpr = relation_expr
+		? extractOriginalSql(relation_expr)
+		: select_with_parens
+			? extractOriginalSql(select_with_parens)
+			: func_table
+				? extractOriginalSql(func_table)
+				: '';
+	const tableName = relation_expr?.getText()
+		|| getDynamicQueryFunctionTableName(table_ref)
+		|| relationAlias;
 	const fromOrJoin = joinType ? `${extractOriginalSql(joinType)} JOIN` : 'FROM';
 	const join = joinQual ? ` ${extractOriginalSql(joinQual)}` : '';
 
-	const fromFragment = `${fromOrJoin} ${fromExpr} ${alias}${join}`;
+	const fromFragment = `${fromOrJoin} ${fromExpr} ${aliasText}${join}`;
 	const fields = columns.map(col => col.column_name);
 	const joinColumns = joinQual ? getJoinColumns(joinQual) : [];
-	const parentList = joinColumns.filter(joinRef => joinRef.prefix !== tableName && joinRef.prefix !== alias);
+	const parentList = joinColumns.filter(joinRef => joinRef.prefix !== tableName && joinRef.prefix !== relationAlias);
 	const parentRelation = parentList.length === 1 ? parentList[0].prefix : '';
 	traverseResult.dynamicQueryInfo?.from.push({
 		fragment: fromFragment,
 		fields,
 		parameters,
 		relationName: tableName,
-		relationAlias: alias,
+		relationAlias,
 		parentRelation
 	})
+}
+
+function getDynamicQueryFunctionTableName(table_ref: Table_refContext): string {
+	const func_table = table_ref.func_table();
+	if (!func_table) {
+		return '';
+	}
+	const func_expr_windowless = func_table.func_expr_windowless();
+	if (func_expr_windowless) {
+		const functionName = func_expr_windowless.func_application()?.func_name()?.getText() || '';
+		return splitName(functionName).name || functionName;
+	}
+	const aliasInfo = getFunctionTableAliasInfo(table_ref);
+	return aliasInfo.relationAlias || 'rows_from';
 }
 
 function getJoinColumns(joinQual: Join_qualContext): FieldName[] {
@@ -2303,7 +2375,7 @@ function traverseResolvedUserFunctionTable(functionInfo: ResolvedFunctionMetadat
 		const selectstmt = parser.stmt().selectstmt();
 		const params: NotNullInfo[] = argList.map(arg => ({ column_name: arg.name, type: arg.type, is_nullable: false, schema: functionInfo.schema, table: '$' } satisfies NotNullInfo));
 		const newFromColumns = params.concat(context.fromColumns);
-		const { columns, multipleRowsResult } = traverseSelectstmt(selectstmt, { ...context, fromColumns: newFromColumns }, traverseResult);
+		const { columns, multipleRowsResult } = traverseSelectstmt(selectstmt, { ...context, fromColumns: newFromColumns, collectNestedInfo: false, collectDynamicQueryInfo: false }, traverseResult);
 		return {
 			columns: columns.map((c, index) => ({
 				...c,
@@ -2365,6 +2437,10 @@ function resolveFunctionTableColumns(functionInfo: ResolvedFunctionMetadata, dbS
 			if (aliasInfo.columnAliases.length > 0) {
 				return aliasInfo.columnAliases.map(columnAlias => createFunctionTableColumn(columnAlias, 'unknown'));
 			}
+			const builtinRecordColumns = getBuiltinRecordFunctionColumns(functionInfo);
+			if (builtinRecordColumns) {
+				return builtinRecordColumns.map(column => createFunctionTableColumn(column.name, column.type, column.isNullable ?? true));
+			}
 			return null;
 		case 'named': {
 			const relationColumns = resolveNamedFunctionRelationColumns(functionInfo.returnType.typeName, dbSchema);
@@ -2404,18 +2480,6 @@ function createFunctionTableColumn(columnName: string, typeName: string, isNulla
 
 function isFunctionTableColumnNullable(functionInfo: ResolvedFunctionMetadata): boolean {
 	return !isAlwaysNonNullScalarFunctionTable(functionInfo);
-}
-
-const NON_NULL_SCALAR_FUNCTION_TABLES = new Set([
-	'generate_series',
-	'generate_subscripts',
-	'json_object_keys',
-	'jsonb_object_keys'
-]);
-
-function isAlwaysNonNullScalarFunctionTable(functionInfo: ResolvedFunctionMetadata): boolean {
-	return functionInfo.schema.toLowerCase() === 'pg_catalog'
-		&& NON_NULL_SCALAR_FUNCTION_TABLES.has(functionInfo.functionName.toLowerCase());
 }
 
 function mapFunctionReturnTypeToPostgresType(typeName: string): PostgresSimpleType {

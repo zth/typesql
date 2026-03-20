@@ -4,6 +4,7 @@ import postgres from 'postgres';
 import { loadDbSchema } from '../../src/drivers/postgres';
 import { PostgresColumnSchema } from '../../src/drivers/types';
 import { Relation2 } from '../../src/sqlite-query-analyzer/sqlite-describe-nested-query';
+import { builtinFunctions, userFunctions } from './schema';
 
 describe('postgres-relation-info', () => {
 
@@ -278,6 +279,83 @@ INNER JOIN users u on u.id = p.fk_user`;
 		];
 
 		const actual = parseSql(sql, dbSchema, {}, [], { collectNestedInfo: true });
+		assert.deepStrictEqual(actual.relations, expectedModel);
+	});
+
+	it('function table root relation - generate_series', () => {
+		const sql = `
+		-- @nested
+		SELECT * FROM generate_series(1, 5) AS g
+		`;
+
+		const expectedModel: Relation2[] = [
+			{
+				name: 'generate_series',
+				alias: 'g',
+				renameAs: true,
+				parentRelation: '',
+				joinColumn: 'g',
+				cardinality: 'many',
+				parentCardinality: 'one'
+			}
+		];
+
+		const actual = parseSql(sql, dbSchema, {}, userFunctions, builtinFunctions, { collectNestedInfo: true });
+		assert.deepStrictEqual(actual.relations, expectedModel);
+	});
+
+	it('function table join relation - generate_series', () => {
+		const sql = `
+		-- @nested
+		SELECT m.id, g.g
+		FROM mytable1 m
+		INNER JOIN generate_series(1, 3) AS g ON g.g = m.id
+		`;
+
+		const expectedModel: Relation2[] = [
+			{
+				name: 'mytable1',
+				alias: 'm',
+				renameAs: false,
+				parentRelation: '',
+				joinColumn: 'id',
+				cardinality: 'one',
+				parentCardinality: 'one'
+			},
+			{
+				name: 'generate_series',
+				alias: 'g',
+				renameAs: true,
+				parentRelation: 'm',
+				joinColumn: 'g',
+				cardinality: 'many',
+				parentCardinality: 'many'
+			}
+		];
+
+		const actual = parseSql(sql, dbSchema, {}, userFunctions, builtinFunctions, { collectNestedInfo: true });
+		assert.deepStrictEqual(actual.relations, expectedModel);
+	});
+
+	it('user-defined function table root relation preserves outer alias', () => {
+		const sql = `
+		-- @nested
+		SELECT * FROM get_mytable1() g
+		`;
+
+		const expectedModel: Relation2[] = [
+			{
+				name: 'get_mytable1',
+				alias: 'g',
+				renameAs: true,
+				parentRelation: '',
+				joinColumn: 'id',
+				cardinality: 'many',
+				parentCardinality: 'one'
+			}
+		];
+
+		const actual = parseSql(sql, dbSchema, {}, userFunctions, builtinFunctions, { collectNestedInfo: true });
 		assert.deepStrictEqual(actual.relations, expectedModel);
 	});
 });

@@ -295,6 +295,68 @@ describe('postgres-function-tables', () => {
 		assert.deepStrictEqual(actual.value, expected);
 	});
 
+	it('SELECT * FROM json_each(...)', async () => {
+		const sql = `SELECT * FROM json_each('{"a":1}'::json)`;
+		const actual = await describeQuery(client, sql, schemaInfo);
+		const expected: PostgresSchemaDef = {
+			sql,
+			queryType: 'Select',
+			multipleRowsResult: true,
+			columns: [
+				{
+					name: 'key',
+					type: 'text',
+					notNull: false,
+					table: 'json_each'
+				},
+				{
+					name: 'value',
+					type: 'json',
+					notNull: false,
+					table: 'json_each'
+				}
+			],
+			parameters: []
+		};
+
+		if (actual.isErr()) {
+			assert.fail(`Shouldn't return an error: ${actual.error.description}`);
+		}
+
+		assert.deepStrictEqual(actual.value, expected);
+	});
+
+	it('SELECT * FROM jsonb_each_text(...) AS t', async () => {
+		const sql = `SELECT * FROM jsonb_each_text('{"a":1}'::jsonb) AS t`;
+		const actual = await describeQuery(client, sql, schemaInfo);
+		const expected: PostgresSchemaDef = {
+			sql,
+			queryType: 'Select',
+			multipleRowsResult: true,
+			columns: [
+				{
+					name: 'key',
+					type: 'text',
+					notNull: false,
+					table: 't'
+				},
+				{
+					name: 'value',
+					type: 'text',
+					notNull: false,
+					table: 't'
+				}
+			],
+			parameters: []
+		};
+
+		if (actual.isErr()) {
+			assert.fail(`Shouldn't return an error: ${actual.error.description}`);
+		}
+
+		assert.deepStrictEqual(actual.value, expected);
+	});
+
 	it('SELECT * FROM unnest(ARRAY[1,2,3]) AS t(id)', async () => {
 		const sql = 'SELECT * FROM unnest(ARRAY[1, 2, 3]) AS t(id)';
 		const actual = await describeQuery(client, sql, schemaInfo);

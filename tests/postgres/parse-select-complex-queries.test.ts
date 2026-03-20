@@ -814,20 +814,11 @@ describe('parse-select-complex-queries', () => {
 				{
 					name: 'level',
 					type: 'int4',
-					notNull: false,
+					notNull: true,
 					table: 'cte'
 				}
 			],
-			parameters: [],
-			analysis: {
-				mode: 'degraded',
-				diagnostics: [
-					{
-						code: 'postgres.unresolved_column',
-						message: 'Column not found: level'
-					}
-				]
-			}
+			parameters: []
 		};
 		if (actual.isErr()) {
 			assert.fail(`Shouldn't return an error: ${actual.error.description}`);

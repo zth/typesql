@@ -2,7 +2,7 @@ import assert from 'node:assert';
 import type { DynamicSqlInfo2, DynamicSqlInfoResult2 } from '../../src/mysql-query-analyzer/types';
 import { parseSql } from '../../src/postgres-query-analyzer/parser';
 import { describeQuery } from '../../src/postgres-query-analyzer/describe';
-import { createTestClient, createSchemaInfo, schema } from './schema';
+import { builtinFunctions, createTestClient, createSchemaInfo, schema } from './schema';
 
 describe('postgres-generate-dynamic-info', () => {
 	const databaseClient = createTestClient();
@@ -124,6 +124,162 @@ describe('postgres-generate-dynamic-info', () => {
 			],
 			where: []
 		};
+		if (actual.isErr()) {
+			assert.fail(`Shouldn't return an error: ${actual.error.description}`);
+		}
+		assert.deepStrictEqual(actual.value.dynamicSqlQuery2, expected);
+	});
+
+	it('dynamic-traverse-result-function-table-root', () => {
+		const sql = `-- @dynamicQuery
+		SELECT * FROM generate_series(1, 5) AS g`;
+
+		const actual = parseSql(sql, schema, {}, [], builtinFunctions, { collectDynamicQueryInfo: true });
+		const expected: DynamicSqlInfo2 = {
+			with: [],
+			select: [
+				{
+					fragment: 'g.g',
+					fragmentWitoutAlias: 'g.g',
+					dependOnRelations: ['g'],
+					parameters: []
+				}
+			],
+			from: [
+				{
+					fragment: 'FROM generate_series(1, 5) AS g',
+					relationName: 'generate_series',
+					relationAlias: 'g',
+					parentRelation: '',
+					fields: ['g'],
+					parameters: []
+				}
+			],
+			where: []
+		};
+
+		assert.deepStrictEqual(actual.dynamicQueryInfo, expected);
+	});
+
+	it('dynamic-info-result-function-table-root', async () => {
+		const sql = `-- @dynamicQuery
+		SELECT * FROM generate_series(1, 5) AS g`;
+
+		const actual = await describeQuery(databaseClient, sql, schemaInfo);
+		const expected: DynamicSqlInfoResult2 = {
+			with: [],
+			select: [
+				{
+					fragment: 'g.g',
+					fragmentWitoutAlias: 'g.g',
+					parameters: []
+				}
+			],
+			from: [
+				{
+					fragment: 'FROM generate_series(1, 5) AS g',
+					relationName: 'generate_series',
+					dependOnFields: [],
+					dependOnOrderBy: [],
+					parameters: []
+				}
+			],
+			where: []
+		};
+
+		if (actual.isErr()) {
+			assert.fail(`Shouldn't return an error: ${actual.error.description}`);
+		}
+		assert.deepStrictEqual(actual.value.dynamicSqlQuery2, expected);
+	});
+
+	it('dynamic-traverse-result-function-table-join', () => {
+		const sql = `-- @dynamicQuery
+		SELECT m.id, g.g
+		FROM mytable1 m
+		INNER JOIN generate_series(1, 3) AS g ON g.g = m.id`;
+
+		const actual = parseSql(sql, schema, {}, [], builtinFunctions, { collectDynamicQueryInfo: true });
+		const expected: DynamicSqlInfo2 = {
+			with: [],
+			select: [
+				{
+					fragment: 'm.id',
+					fragmentWitoutAlias: 'm.id',
+					dependOnRelations: ['m'],
+					parameters: []
+				},
+				{
+					fragment: 'g.g',
+					fragmentWitoutAlias: 'g.g',
+					dependOnRelations: ['g'],
+					parameters: []
+				}
+			],
+			from: [
+				{
+					fragment: 'FROM mytable1 m',
+					relationName: 'mytable1',
+					relationAlias: 'm',
+					parentRelation: '',
+					fields: ['id', 'value'],
+					parameters: []
+				},
+				{
+					fragment: 'INNER JOIN generate_series(1, 3) AS g ON g.g = m.id',
+					relationName: 'generate_series',
+					relationAlias: 'g',
+					parentRelation: 'm',
+					fields: ['g'],
+					parameters: []
+				}
+			],
+			where: []
+		};
+
+		assert.deepStrictEqual(actual.dynamicQueryInfo, expected);
+	});
+
+	it('dynamic-info-result-function-table-join', async () => {
+		const sql = `-- @dynamicQuery
+		SELECT m.id, g.g
+		FROM mytable1 m
+		INNER JOIN generate_series(1, 3) AS g ON g.g = m.id`;
+
+		const actual = await describeQuery(databaseClient, sql, schemaInfo);
+		const expected: DynamicSqlInfoResult2 = {
+			with: [],
+			select: [
+				{
+					fragment: 'm.id',
+					fragmentWitoutAlias: 'm.id',
+					parameters: []
+				},
+				{
+					fragment: 'g.g',
+					fragmentWitoutAlias: 'g.g',
+					parameters: []
+				}
+			],
+			from: [
+				{
+					fragment: 'FROM mytable1 m',
+					relationName: 'mytable1',
+					dependOnFields: [],
+					dependOnOrderBy: [],
+					parameters: []
+				},
+				{
+					fragment: 'INNER JOIN generate_series(1, 3) AS g ON g.g = m.id',
+					relationName: 'generate_series',
+					dependOnFields: [1],
+					dependOnOrderBy: [],
+					parameters: []
+				}
+			],
+			where: []
+		};
+
 		if (actual.isErr()) {
 			assert.fail(`Shouldn't return an error: ${actual.error.description}`);
 		}
